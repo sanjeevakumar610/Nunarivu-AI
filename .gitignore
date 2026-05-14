@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Tamil textbook PDFs — large user data, not part of source code
+"Tamil Book PDF"/
+Tamil Book PDF/
+
+# Claude Code session files
+.claude/
+
+# Local scripts / test files
+scripts/
+*.py

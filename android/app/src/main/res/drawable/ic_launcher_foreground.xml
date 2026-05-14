@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer glow ring -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M54,18 m-38,0 a38,38 0 1,0 76,0 a38,38 0 1,0 -76,0"/>
+
+    <!-- Mortarboard board (flat top) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24 L20,38 L54,52 L88,38 Z"/>
+
+    <!-- Cap body (cylinder/dome) -->
+    <path
+        android:fillColor="#E8EAF6"
+        android:pathData="M38,42 L38,58 Q38,67 54,67 Q70,67 70,58 L70,42 L54,48 Z"/>
+
+    <!-- Tassel string -->
+    <path
+        android:fillColor="#FFD54F"
+        android:strokeColor="#FFD54F"
+        android:strokeWidth="2"
+        android:pathData="M76,38 L76,54"/>
+
+    <!-- Tassel ball -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M76,54 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
+
+    <!-- Top button on cap -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M54,24 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"/>
+</vector>
