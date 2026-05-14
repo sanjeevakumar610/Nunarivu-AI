@@ -52,8 +52,12 @@ class _ReminderScreenState extends ConsumerState<ReminderScreen> {
     if (result == null) return;
 
     await NotificationService.instance.requestPermission();
-    await ReminderService.instance.create(result);
-    await _load();
+    try {
+      await ReminderService.instance.create(result);
+    } catch (e) {
+      print('ReminderScreen: create error: $e');
+    }
+    await _load(); // always refresh list, even if scheduling failed
   }
 
   Future<void> _editReminder(Reminder r) async {

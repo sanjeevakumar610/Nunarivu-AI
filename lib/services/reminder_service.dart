@@ -15,7 +15,16 @@ class ReminderService {
     final db = await DbService.instance.db;
     await db.insert('reminders', reminder.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
-    if (reminder.isActive) await _schedule(reminder);
+    if (reminder.isActive) {
+      try {
+        await _schedule(reminder);
+      } catch (e) {
+        // Notification scheduling may fail if the user hasn't granted
+        // SCHEDULE_EXACT_ALARM permission (common on MIUI / Android 12+).
+        // The reminder is still saved to the DB — it will appear in the list.
+        print('ReminderService: notification scheduling failed: $e');
+      }
+    }
   }
 
   Future<List<Reminder>> loadForProfile(String profileId) async {
@@ -51,10 +60,14 @@ class ReminderService {
       whereArgs: [effective.id],
     );
 
-    if (isActive) {
-      await _schedule(effective);
-    } else {
-      await NotificationService.instance.cancel(reminder.notificationId);
+    try {
+      if (isActive) {
+        await _schedule(effective);
+      } else {
+        await NotificationService.instance.cancel(reminder.notificationId);
+      }
+    } catch (e) {
+      print('ReminderService toggle: notification error: $e');
     }
   }
 
@@ -68,8 +81,12 @@ class ReminderService {
       whereArgs: [reminder.id],
     );
     // Cancel old notification then reschedule.
-    await NotificationService.instance.cancel(reminder.notificationId);
-    if (reminder.isActive) await _schedule(reminder);
+    try {
+      await NotificationService.instance.cancel(reminder.notificationId);
+      if (reminder.isActive) await _schedule(reminder);
+    } catch (e) {
+      print('ReminderService update: notification error: $e');
+    }
   }
 
   Future<void> delete(String reminderId) async {

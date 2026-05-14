@@ -27,8 +27,8 @@ class SttService {
       listenMode: ListenMode.dictation,
       // Keep listening for up to 3 minutes total.
       listenFor: const Duration(minutes: 3),
-      // Only stop after 6 seconds of silence (default is ~2 s on Android).
-      pauseFor: const Duration(seconds: 6),
+      // Only stop after 10 seconds of silence (default is ~2 s on Android).
+      pauseFor: const Duration(seconds: 10),
     );
   }
 

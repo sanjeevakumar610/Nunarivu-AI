@@ -82,7 +82,10 @@ class NotificationService {
         body,
         _nextInstanceOf(hour, minute),
         _notifDetails,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        // inexactAllowWhileIdle does not require SCHEDULE_EXACT_ALARM permission
+        // (which is restricted on MIUI/Android 12+). Study reminders firing a
+        // few minutes late is acceptable.
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         matchDateTimeComponents: DateTimeComponents.time,

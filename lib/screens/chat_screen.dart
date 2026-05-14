@@ -553,7 +553,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
           // Context-full warning when chat gets long
           if (messagesAsync.value != null &&
-              (messagesAsync.value!.length) >= 20)
+              (messagesAsync.value!.length) >= 200)
             _ContextFullBanner(onNewChat: _newChat),
           _InputBar(
             controller: _textCtrl,
