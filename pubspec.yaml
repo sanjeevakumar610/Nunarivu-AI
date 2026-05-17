@@ -22,8 +22,8 @@ dependencies:
   # Runtime permissions (camera, microphone, storage)
   permission_handler: ^11.4.0
 
-  # Offline Tamil speech-to-text via Vosk (no internet, no Google services)
-  vosk_flutter: ^0.3.48
+  # Tamil speech-to-text via Google (requires internet; works out of the box)
+  speech_to_text: ^7.0.0
 
   # Text-to-speech (read AI responses aloud in Tamil/English)
   flutter_tts: ^4.0.0
@@ -63,11 +63,8 @@ dependencies:
 
 
 dependency_overrides:
-  # vosk_flutter 0.3.x has old transitive deps — override both so pub resolves.
-  # We side-load the model manually (no HTTP download), so http version mismatch
-  # is safe. permission_handler 11.x API is backwards compatible with 10.x usage.
+  # permission_handler 11.x API is backwards compatible with older usage.
   permission_handler: ^11.4.0
-  http: ^1.0.0
 
 dev_dependencies:
   flutter_test:
@@ -79,12 +76,6 @@ flutter:
   assets:
     - assets/tokenizer/vocab.json
     - assets/tokenizer/merges.txt
-    # ── Inbuilt Tamil STT model ──────────────────────────────────────────────
-    # To bundle the Vosk Tamil model inside the APK (no pen drive needed for STT):
-    #   1. Download vosk-model-small-ta-0.4.zip from https://alphacephei.com/vosk/models
-    #   2. Place it at:  assets/vosk-model-small-ta-0.4.zip
-    #   3. Uncomment the line below, then rebuild:
-    # - assets/vosk-model-small-ta-0.4.zip
     - assets/tessdata_config.json
     - assets/tessdata/tam.traineddata
     - assets/tessdata/eng.traineddata

@@ -11,7 +11,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/model_service.dart';
-import '../services/stt_service.dart';
 
 // ── SharedPreferences key ─────────────────────────────────────────────────────
 
@@ -25,9 +24,6 @@ Future<String> _internalModelsDir() async {
   final base = ext?.path ?? '/data/data/com.example.nunarivu_ai/files';
   return '$base/models';
 }
-
-Future<String> _internalVoskDir() async =>
-    '${await _internalModelsDir()}/vosk-model-ta';
 
 Future<String> _internalBooksDir() async {
   final modelsDir = await _internalModelsDir();
@@ -97,7 +93,6 @@ class _AdvancedSettingsScreenState
 
   // ── Device status ────────────────────────────────────────────────────────────
   bool _hasAiModel    = false;
-  bool _hasVoiceModel = false;
   int  _bookCount     = 0;
   String _loadedModelPath = '';
 
@@ -108,12 +103,10 @@ class _AdvancedSettingsScreenState
   bool            _usbScanned       = false;   // true after first scan attempt
   bool            _usbNunarivuFound = false;
   bool            _usbHasAiModel    = false;
-  bool            _usbHasVoiceModel = false;
   bool            _usbHasBooks      = false;
 
   // ── Copy progress ────────────────────────────────────────────────────────────
   double? _aiProgress;
-  double? _voiceProgress;
   double? _booksProgress;
   String  _copyStatus = '';
 
@@ -126,9 +119,8 @@ class _AdvancedSettingsScreenState
   double? _customBooksProgress;
 
   bool get _copying =>
-      _aiProgress != null || _voiceProgress != null ||
-      _booksProgress != null || _customAiProgress != null ||
-      _customBooksProgress != null;
+      _aiProgress != null || _booksProgress != null ||
+      _customAiProgress != null || _customBooksProgress != null;
 
   @override
   void initState() {
@@ -147,12 +139,10 @@ class _AdvancedSettingsScreenState
 
   Future<void> _loadDeviceStatus() async {
     final modelsDir = await _internalModelsDir();
-    final voskDir   = await _internalVoskDir();
     final booksDir  = await _internalBooksDir();
 
     final modelFile = File('$modelsDir/$_modelFileName');
     final hasAi     = modelFile.existsSync();
-    final hasVoice  = Directory(voskDir).existsSync();
 
     int bookCount = 0;
     if (Directory(booksDir).existsSync()) {
@@ -171,7 +161,6 @@ class _AdvancedSettingsScreenState
     if (mounted) {
       setState(() {
         _hasAiModel      = hasAi;
-        _hasVoiceModel   = hasVoice;
         _bookCount       = bookCount;
         _loadedModelPath = hasAi ? modelFile.path : saved;
       });
@@ -201,7 +190,7 @@ class _AdvancedSettingsScreenState
       _usbScanned       = false;
       _selectedDrive    = null;
       _usbNunarivuFound = false;
-      _usbHasAiModel = _usbHasVoiceModel = _usbHasBooks = false;
+      _usbHasAiModel = _usbHasBooks = false;
     });
 
     final granted = await _ensureStoragePermission();
@@ -214,7 +203,7 @@ class _AdvancedSettingsScreenState
     final drives = await _findUsbDrives();
     Directory? selected;
     bool nunarivuFound = false;
-    bool hasAi = false, hasVoice = false, hasBooks = false;
+    bool hasAi = false, hasBooks = false;
 
     if (drives.isNotEmpty) {
       selected = drives.first;
@@ -222,7 +211,6 @@ class _AdvancedSettingsScreenState
       nunarivuFound = base.existsSync();
       if (nunarivuFound) {
         hasAi    = File('${base.path}/models/$_modelFileName').existsSync();
-        hasVoice = Directory('${base.path}/models/vosk-model-ta').existsSync();
         hasBooks = Directory('${base.path}/books').existsSync();
       }
     }
@@ -233,7 +221,6 @@ class _AdvancedSettingsScreenState
         _selectedDrive    = selected;
         _usbNunarivuFound = nunarivuFound;
         _usbHasAiModel    = hasAi;
-        _usbHasVoiceModel = hasVoice;
         _usbHasBooks      = hasBooks;
         _scanningUsb      = false;
         _usbScanned       = true;
@@ -270,30 +257,6 @@ class _AdvancedSettingsScreenState
     }
   }
 
-  Future<void> _copyVoiceModel() async {
-    if (_selectedDrive == null) return;
-    final src = Directory('${_selectedDrive!.path}/nunarivu/models/vosk-model-ta');
-    final dst = Directory(await _internalVoskDir());
-    setState(() {
-      _voiceProgress = 0.0;
-      _copyStatus = 'குரல் மாதிரி நகலெடுக்கிறது… / Copying voice model…';
-    });
-    try {
-      await _copyDir(src, dst);
-      if (mounted) {
-        setState(() { _voiceProgress = 1.0; _hasVoiceModel = true; });
-        await ref.read(sttServiceProvider).reinitVosk();
-        ref.invalidate(voskModelReadyProvider);
-        _snack('குரல் மாதிரி நகலெடுக்கப்பட்டது ✓');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _voiceProgress = null);
-        _snack('பிழை / Copy error: $e');
-      }
-    }
-  }
-
   Future<void> _copyBooks() async {
     if (_selectedDrive == null) return;
     final src = Directory('${_selectedDrive!.path}/nunarivu/books');
@@ -318,9 +281,8 @@ class _AdvancedSettingsScreenState
   }
 
   Future<void> _copyAll() async {
-    if (_usbHasAiModel)    await _copyAiModel();
-    if (_usbHasVoiceModel) await _copyVoiceModel();
-    if (_usbHasBooks)      await _copyBooks();
+    if (_usbHasAiModel) await _copyAiModel();
+    if (_usbHasBooks)   await _copyBooks();
   }
 
   // ── Manual / custom path ──────────────────────────────────────────────────────
@@ -533,14 +495,6 @@ class _AdvancedSettingsScreenState
           ),
 
           _StatusRow(
-            label: 'தமிழ் குரல் மாதிரி · Tamil Voice (STT)',
-            sublabel: _hasVoiceModel
-                ? 'vosk-model-ta installed ✓'
-                : '❌ Not installed — bundled STT auto-extracts on first run, '
-                  'or copy vosk-model-ta/ from pen drive',
-            ok: _hasVoiceModel,
-          ),
-          _StatusRow(
             label: 'பாடப்புத்தகங்கள் · Textbooks',
             sublabel: _bookCount > 0
                 ? '$_bookCount grade folder(s) installed ✓'
@@ -569,7 +523,6 @@ class _AdvancedSettingsScreenState
               'nunarivu/\n'
               '  models/\n'
               '    gemma-4-E2B-it-litert-lm.litertlm  ← 2.4 GB\n'
-              '    vosk-model-ta/   ← Tamil voice folder\n'
               '  books/\n'
               '    Grade 10/\n'
               '    Grade 11/',
@@ -643,24 +596,20 @@ class _AdvancedSettingsScreenState
                       subtitle: 'Create a nunarivu/ folder on the drive '
                           'with the layout shown above.',
                     )
-                  // nunarivu/ found but model missing
-                  else if (!_usbHasAiModel && !_usbHasVoiceModel && !_usbHasBooks)
+                  // nunarivu/ found but nothing inside
+                  else if (!_usbHasAiModel && !_usbHasBooks)
                     _AlertCard(
                       icon: Icons.search_off_rounded,
                       color: Colors.orange,
                       title: 'மாதிரி கோப்புகள் இல்லை',
                       subtitle: 'nunarivu/ folder found but no model or books '
-                          'inside nunarivu/models/. Check the folder structure.',
+                          'inside. Check the folder structure.',
                     )
                   else
                     Wrap(spacing: 8, runSpacing: 4, children: [
-                      if (_usbHasAiModel)    _FoundChip('AI Model ✓'),
-                      if (_usbHasVoiceModel) _FoundChip('Voice Model ✓'),
-                      if (_usbHasBooks)      _FoundChip('Books ✓'),
-                      if (!_usbHasAiModel)
-                        _MissingChip('AI Model ✗'),
-                      if (!_usbHasVoiceModel)
-                        _MissingChip('Voice Model ✗'),
+                      if (_usbHasAiModel) _FoundChip('AI Model ✓'),
+                      if (_usbHasBooks)   _FoundChip('Books ✓'),
+                      if (!_usbHasAiModel) _MissingChip('AI Model ✗'),
                     ]),
                 ],
               ),
@@ -687,18 +636,6 @@ class _AdvancedSettingsScreenState
               const SizedBox(height: 8),
             ],
 
-            if (_usbHasVoiceModel) ...[
-              _voiceProgress != null
-                  ? _ProgressRow('குரல் மாதிரி (~43 MB)', _voiceProgress!)
-                  : _CopyTile(
-                      icon: Icons.mic_rounded,
-                      label: 'குரல் மாதிரி நகலெடு / Copy Voice Model',
-                      sublabel: '~43 MB',
-                      onPressed: _copying ? null : _copyVoiceModel,
-                    ),
-              const SizedBox(height: 8),
-            ],
-
             if (_usbHasBooks) ...[
               _booksProgress != null
                   ? _ProgressRow('பாடப்புத்தகங்கள்', _booksProgress!)
@@ -711,8 +648,7 @@ class _AdvancedSettingsScreenState
               const SizedBox(height: 8),
             ],
 
-            if ((_usbHasAiModel || _usbHasVoiceModel || _usbHasBooks) &&
-                !_copying)
+            if ((_usbHasAiModel || _usbHasBooks) && !_copying)
               OutlinedButton.icon(
                 icon: const Icon(Icons.copy_all_rounded),
                 label: Text('அனைத்தையும் நகலெடு / Copy All',
