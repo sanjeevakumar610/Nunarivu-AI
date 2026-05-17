@@ -173,6 +173,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               text: finalText,
               timestamp: DateTime.now(),
             ));
+      } else {
+        // EventChannel stream completed with zero tokens — fall back to the
+        // non-streaming MethodChannel infer() so the user still gets a reply.
+        try {
+          final response = await ref
+              .read(modelServiceProvider.notifier)
+              .infer(fullPrompt, imagePath: imagePath);
+          await ref.read(_messagesProvider.notifier).add(ChatMessage(
+                id: _uuid.v4(),
+                profileId: profileId,
+                chatId: chatId,
+                role: MessageRole.assistant,
+                text: response.isNotEmpty
+                    ? response
+                    : 'மன்னிக்கவும், மாதிரி பதில் தரவில்லை.\n'
+                      'No response from model. '
+                      'Go to Settings → Advanced and reload the model.',
+                timestamp: DateTime.now(),
+              ));
+        } catch (fallbackErr) {
+          await ref.read(_messagesProvider.notifier).add(ChatMessage(
+                id: _uuid.v4(),
+                profileId: profileId,
+                chatId: chatId,
+                role: MessageRole.assistant,
+                text: 'மாதிரி பிழை / Model error: $fallbackErr\n'
+                    'Settings → Advanced → மாதிரி மீண்டும் ஏற்று / Reload Model.',
+                timestamp: DateTime.now(),
+              ));
+        }
       }
     } catch (e) {
       await ref.read(_messagesProvider.notifier).add(ChatMessage(
@@ -180,7 +210,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             profileId: profileId,
             chatId: chatId,
             role: MessageRole.assistant,
-            text: 'பிழை / Error: $e',
+            text: 'பிழை / Error: $e\n'
+                'Settings → Advanced → மாதிரி மீண்டும் ஏற்று / Reload Model.',
             timestamp: DateTime.now(),
           ));
     } finally {
