@@ -57,3 +57,6 @@ scripts/
 
 # Local developer reference notes — never push
 LOCAL_NOTES.md
+
+# USB drive distribution folder — contains large APK + model files
+usb_drive/
