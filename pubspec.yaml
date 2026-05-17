@@ -22,8 +22,8 @@ dependencies:
   # Runtime permissions (camera, microphone, storage)
   permission_handler: ^11.4.0
 
-  # Offline Tamil/English speech-to-text
-  speech_to_text: ^7.0.0
+  # Offline Tamil speech-to-text via Vosk (no internet, no Google services)
+  vosk_flutter: ^0.3.48
 
   # Text-to-speech (read AI responses aloud in Tamil/English)
   flutter_tts: ^4.0.0
@@ -61,6 +61,13 @@ dependencies:
   flutter_tesseract_ocr: ^0.4.22
   pdfx: ^2.6.0
 
+
+dependency_overrides:
+  # vosk_flutter 0.3.x has old transitive deps — override both so pub resolves.
+  # We side-load the model manually (no HTTP download), so http version mismatch
+  # is safe. permission_handler 11.x API is backwards compatible with 10.x usage.
+  permission_handler: ^11.4.0
+  http: ^1.0.0
 
 dev_dependencies:
   flutter_test:

@@ -10,6 +10,7 @@ import '../services/chat_history_service.dart';
 import '../services/profile_service.dart';
 import '../services/tts_service.dart';
 import '../widgets/profile_avatar.dart';
+import 'advanced_settings_screen.dart';
 import 'profile_picker_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -625,6 +626,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       }
                     }
                   },
+          ),
+
+          const Divider(height: 24),
+          _SectionHeader('மேம்பட்ட · Advanced'),
+          ListTile(
+            leading: const Icon(Icons.settings_applications_rounded),
+            title: Text('மேம்பட்ட அமைப்புகள்',
+                style: GoogleFonts.notoSansTamil(fontSize: 14)),
+            subtitle: Text('OTG pen drive · AI model · Voice model',
+                style: GoogleFonts.notoSansTamil(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AdvancedSettingsScreen()),
+            ),
           ),
 
           const SizedBox(height: 32),

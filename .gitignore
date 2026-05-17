@@ -54,3 +54,6 @@ Tamil Book PDF/
 # Local scripts / test files
 scripts/
 *.py
+
+# Local developer reference notes — never push
+LOCAL_NOTES.md

@@ -253,26 +253,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ));
 
     _textCtrl.clear();
+    _scrollToBottom(); // show the user message immediately before inference starts
 
-    // Build full prompt: system context + conversation history + user question
+    // Build full prompt: system context + user question (no history — each Q is independent)
     final systemPrompt = profile.buildSystemPrompt();
-    final allMessages  = ref.read(_messagesProvider).value ?? [];
-    // Keep the last 10 messages (5 exchanges) so the model remembers the topic.
-    // Trimmed to the last exchange where the student changed topic naturally.
-    final history = allMessages.length > 10
-        ? allMessages.sublist(allMessages.length - 10)
-        : allMessages;
-    final historyStr = history.map((m) {
-      final role = m.role == MessageRole.user ? 'Student' : 'Tutor';
-      return '$role: ${m.text}';
-    }).join('\n');
-
     String fullPrompt = systemPrompt;
-    if (historyStr.isNotEmpty) {
-      fullPrompt +=
-          '\n\nCONVERSATION SO FAR (stay on the current topic the student is discussing):\n'
-          '$historyStr';
-    }
     fullPrompt += '\n\nStudent: $displayText';
 
     // Always pass imagePath: null (Gemma 4 E2B is text-only)
