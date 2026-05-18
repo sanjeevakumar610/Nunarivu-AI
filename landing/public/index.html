@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="ta" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>நுணரிவு AI · Nunarivu AI — Offline Tamil AI Tutor</title>
+  <meta name="description" content="Offline Tamil AI Tutor for Sri Lankan students. Runs Google Gemma 4 on your phone — no internet, no subscription, no data ever leaves your device." />
+  <meta property="og:title" content="நுணரிவு AI · Nunarivu AI" />
+  <meta property="og:description" content="Offline Tamil AI Tutor for Sri Lankan students powered by Google Gemma 4." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #070b14;
+      --bg2:       #0d1526;
+      --bg3:       #111d35;
+      --accent:    #4f9cf9;
+      --accent2:   #38d9a9;
+      --accent3:   #f96b4f;
+      --text:      #e8edf5;
+      --text2:     #8a9bbf;
+      --border:    #1e2d4a;
+      --card:      #0f1a2e;
+      --radius:    16px;
+      --shadow:    0 8px 40px rgba(0,0,0,0.5);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Noto Sans Tamil', sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── NAV ─────────────────────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 5vw;
+      height: 64px;
+      background: rgba(7,11,20,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center;
+      font-size: 18px; font-weight: 800; color: #fff;
+      font-family: 'Noto Sans Tamil', sans-serif;
+    }
+    .nav-title { font-weight: 700; font-size: 16px; color: var(--text); }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a {
+      color: var(--text2); text-decoration: none; font-size: 14px;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .btn-nav {
+      background: var(--accent); color: #fff; border: none;
+      padding: 8px 18px; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; text-decoration: none;
+      transition: opacity .2s;
+    }
+    .btn-nav:hover { opacity: .85; }
+
+    /* ── HERO ────────────────────────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; text-align: center;
+      padding: 120px 5vw 80px;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(79,156,249,0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(56,217,169,0.07) 0%, transparent 60%),
+        var(--bg);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%234f9cf9' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(79,156,249,0.1); border: 1px solid rgba(79,156,249,0.3);
+      border-radius: 100px; padding: 6px 16px; font-size: 12px;
+      color: var(--accent); margin-bottom: 28px; font-weight: 500;
+    }
+    .hero-badge span { font-size: 14px; }
+    .hero-title-ta {
+      font-family: 'Noto Sans Tamil', sans-serif;
+      font-size: clamp(44px, 8vw, 96px);
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 30%, var(--accent) 70%, var(--accent2) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.1; margin-bottom: 8px;
+    }
+    .hero-title-en {
+      font-size: clamp(16px, 3vw, 26px);
+      color: var(--text2); font-weight: 400; margin-bottom: 20px;
+      letter-spacing: .5px;
+    }
+    .hero-sub {
+      font-size: clamp(14px, 2vw, 18px);
+      color: var(--text2); max-width: 600px; margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+    .hero-sub strong { color: var(--text); }
+    .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, var(--accent), #3b82f6);
+      color: #fff; text-decoration: none;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 15px; font-weight: 600;
+      box-shadow: 0 4px 24px rgba(79,156,249,0.4);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(79,156,249,0.5); }
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 15px; font-weight: 600;
+      transition: background .2s, border-color .2s;
+    }
+    .btn-secondary:hover { background: var(--bg3); border-color: var(--accent); }
+    .hero-pills {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+      margin-top: 48px;
+    }
+    .pill {
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 100px; padding: 6px 14px; font-size: 12px; color: var(--text2);
+    }
+    .pill.green { border-color: rgba(56,217,169,.3); color: var(--accent2); background: rgba(56,217,169,.07); }
+    .pill.blue  { border-color: rgba(79,156,249,.3); color: var(--accent);  background: rgba(79,156,249,.07); }
+    .pill.orange{ border-color: rgba(249,107,79,.3);  color: var(--accent3); background: rgba(249,107,79,.07);}
+
+    /* ── SECTION WRAPPER ─────────────────────────────────────────────── */
+    section { padding: 96px 5vw; }
+    .section-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(26px, 4vw, 42px); font-weight: 700;
+      color: var(--text); margin-bottom: 16px; line-height: 1.2;
+    }
+    .section-sub {
+      font-size: 16px; color: var(--text2); max-width: 600px;
+      line-height: 1.7; margin-bottom: 56px;
+    }
+    .center { text-align: center; margin-left: auto; margin-right: auto; }
+
+    /* ── STATS BAR ───────────────────────────────────────────────────── */
+    .stats-bar {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 40px 5vw;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 32px;
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 36px; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-label { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
+
+    /* ── PROBLEM ─────────────────────────────────────────────────────── */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .problem-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px;
+      transition: border-color .2s, transform .2s;
+    }
+    .problem-card:hover { border-color: var(--accent3); transform: translateY(-3px); }
+    .problem-icon { font-size: 32px; margin-bottom: 14px; }
+    .problem-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .problem-title span { font-family: 'Noto Sans Tamil', sans-serif; font-size: 13px; color: var(--text2); display: block; }
+    .problem-desc { font-size: 14px; color: var(--text2); line-height: 1.6; }
+    .problem-desc strong { color: var(--accent3); }
+
+    /* ── FEATURES ────────────────────────────────────────────────────── */
+    .features-bg { background: var(--bg2); }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px;
+      transition: border-color .2s, transform .2s;
+    }
+    .feature-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .feature-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: linear-gradient(135deg, rgba(79,156,249,.15), rgba(56,217,169,.15));
+      border: 1px solid rgba(79,156,249,.2);
+      display: grid; place-items: center; font-size: 22px;
+      margin-bottom: 16px;
+    }
+    .feature-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .feature-title-ta { font-family: 'Noto Sans Tamil', sans-serif; font-size: 13px; color: var(--accent); display: block; margin-bottom: 8px; }
+    .feature-desc { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+    /* ── HOW IT WORKS ────────────────────────────────────────────────── */
+    .pipeline {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 32px;
+      max-width: 720px; margin: 0 auto;
+    }
+    .pipeline-step {
+      display: flex; gap: 20px; align-items: flex-start;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pipeline-step:last-child { border-bottom: none; padding-bottom: 0; }
+    .step-num {
+      width: 36px; height: 36px; flex-shrink: 0;
+      border-radius: 50%; display: grid; place-items: center;
+      font-size: 13px; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .step-body { flex: 1; }
+    .step-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .step-desc { font-size: 13px; color: var(--text2); }
+    .step-code {
+      margin-top: 8px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; font-family: 'Courier New', monospace;
+      font-size: 12px; color: var(--accent2); overflow-x: auto;
+    }
+
+    /* ── TECH STACK ──────────────────────────────────────────────────── */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .tech-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px 20px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .tech-emoji { font-size: 24px; flex-shrink: 0; }
+    .tech-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .tech-role { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+    /* ── PRIZES ──────────────────────────────────────────────────────── */
+    .prizes-bg { background: var(--bg2); }
+    .prizes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px; max-width: 900px; margin: 0 auto;
+    }
+    .prize-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      text-align: center;
+      transition: border-color .2s, transform .2s;
+    }
+    .prize-card:hover { border-color: #f6c90e; transform: translateY(-3px); }
+    .prize-icon { font-size: 36px; margin-bottom: 10px; }
+    .prize-amount {
+      font-size: 24px; font-weight: 800; color: #f6c90e; margin-bottom: 6px;
+    }
+    .prize-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .prize-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+    /* ── INSTALL ─────────────────────────────────────────────────────── */
+    .install-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px; max-width: 900px; margin: 0 auto 48px;
+    }
+    .install-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      position: relative;
+    }
+    .install-num {
+      position: absolute; top: -14px; left: 20px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: 12px; font-weight: 800;
+      display: grid; place-items: center;
+    }
+    .install-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; margin-top: 4px; }
+    .install-desc { font-size: 13px; color: var(--text2); line-height: 1.6; }
+    .install-code {
+      margin-top: 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; font-family: 'Courier New', monospace;
+      font-size: 11px; color: var(--accent2); overflow-x: auto;
+      word-break: break-all;
+    }
+
+    /* ── PRIVACY ─────────────────────────────────────────────────────── */
+    .privacy-bar {
+      background: linear-gradient(135deg, rgba(56,217,169,.08), rgba(79,156,249,.08));
+      border: 1px solid rgba(56,217,169,.2);
+      border-radius: var(--radius); padding: 32px 40px;
+      display: flex; align-items: center; gap: 24px;
+      max-width: 700px; margin: 0 auto;
+      flex-wrap: wrap;
+    }
+    .privacy-icon { font-size: 48px; flex-shrink: 0; }
+    .privacy-title { font-size: 20px; font-weight: 700; color: var(--accent2); margin-bottom: 6px; }
+    .privacy-desc { font-size: 14px; color: var(--text2); line-height: 1.6; }
+
+    /* ── FOOTER ──────────────────────────────────────────────────────── */
+    footer {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      padding: 48px 5vw 32px;
+    }
+    .footer-top {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 40px; flex-wrap: wrap; margin-bottom: 40px;
+    }
+    .footer-brand { max-width: 320px; }
+    .footer-logo {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px;
+    }
+    .footer-logo-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center;
+      font-size: 20px; font-family: 'Noto Sans Tamil', sans-serif;
+      font-weight: 800; color: #fff;
+    }
+    .footer-logo-text { font-weight: 700; font-size: 18px; }
+    .footer-desc { font-size: 13px; color: var(--text2); line-height: 1.6; }
+    .footer-links h4 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+    .footer-links ul { list-style: none; }
+    .footer-links li { margin-bottom: 8px; }
+    .footer-links a { font-size: 14px; color: var(--text2); text-decoration: none; transition: color .2s; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-bottom {
+      border-top: 1px solid var(--border); padding-top: 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .footer-copy { font-size: 12px; color: var(--text2); }
+    .footer-trademark { font-size: 11px; color: var(--text2); opacity: .6; }
+
+    /* ── ANIMATIONS ──────────────────────────────────────────────────── */
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .float { animation: float 4s ease-in-out infinite; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp .6s ease both; }
+    .delay-1 { animation-delay: .1s; }
+    .delay-2 { animation-delay: .2s; }
+    .delay-3 { animation-delay: .3s; }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .nav-links { display: none; }
+      .hero-actions { flex-direction: column; align-items: center; }
+      .privacy-bar { flex-direction: column; text-align: center; }
+      .footer-top { flex-direction: column; }
+      section { padding: 64px 5vw; }
+    }
+
+    /* ── SCROLLBAR ───────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ──────────────────────────────────────────────────────────────── -->
+<nav>
+  <a href="#" class="nav-brand">
+    <div class="nav-logo">ந</div>
+    <span class="nav-title">Nunarivu AI</span>
+  </a>
+  <div class="nav-links">
+    <a href="#problem">Problem</a>
+    <a href="#features">Features</a>
+    <a href="#howitworks">How it Works</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/sanjeevakumar610/Nunarivu-AI" target="_blank">GitHub</a>
+    <a href="https://github.com/sanjeevakumar610/Nunarivu-AI/releases/download/v1.0.0/app-release.apk" class="btn-nav">Download APK</a>
+  </div>
+</nav>
+
+<!-- ── HERO ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-badge fade-up">
+    <span>🏆</span> Gemma 4 Good Hackathon · Google LLC
+  </div>
+  <h1 class="hero-title-ta fade-up delay-1">நுணரிவு AI</h1>
+  <p class="hero-title-en fade-up delay-1">Nunarivu AI</p>
+  <p class="hero-sub fade-up delay-2">
+    A <strong>fully offline</strong> Tamil AI tutor for Sri Lankan students.<br />
+    Runs <strong>Google Gemma 4</strong> directly on your phone —<br />
+    no internet, no subscription, no data ever leaves your device.
+  </p>
+  <div class="hero-actions fade-up delay-3">
+    <a href="https://github.com/sanjeevakumar610/Nunarivu-AI/releases/download/v1.0.0/app-release.apk"
+       class="btn-primary">
+      📱 Download APK
+    </a>
+    <a href="https://github.com/sanjeevakumar610/Nunarivu-AI" target="_blank"
+       class="btn-secondary">
+      ⭐ View on GitHub
+    </a>
+  </div>
+  <div class="hero-pills fade-up delay-3">
+    <span class="pill green">✈️ Works in Airplane Mode</span>
+    <span class="pill blue">🤖 Gemma 4 E2B · LiteRT</span>
+    <span class="pill">📚 161 Textbooks</span>
+    <span class="pill orange">🎤 Tamil Voice Q&A</span>
+    <span class="pill">🔒 Zero Data Leaves Device</span>
+  </div>
+</section>
+
+<!-- ── STATS ─────────────────────────────────────────────────────────────── -->
+<div class="stats-bar">
+  <div>
+    <div class="stat-num">542K+</div>
+    <div class="stat-label">Tamil-medium students<br />in Sri Lanka</div>
+  </div>
+  <div>
+    <div class="stat-num">1,382</div>
+    <div class="stat-label">Schools damaged by<br />Cyclone Ditwah (2025)</div>
+  </div>
+  <div>
+    <div class="stat-num">550K</div>
+    <div class="stat-label">Children with<br />disrupted education</div>
+  </div>
+  <div>
+    <div class="stat-num">161</div>
+    <div class="stat-label">Tamil textbooks<br />supported</div>
+  </div>
+  <div>
+    <div class="stat-num">$0</div>
+    <div class="stat-label">Cost to students —<br />free forever</div>
+  </div>
+</div>
+
+<!-- ── PROBLEM ───────────────────────────────────────────────────────────── -->
+<section id="problem">
+  <div class="section-label center">The Problem</div>
+  <h2 class="section-title center">Why Tamil Students Have No AI Tools</h2>
+  <p class="section-sub center">
+    Sri Lanka ranks <strong>4th most climate-affected country globally</strong>. Tamil students face a double crisis — recurring natural disasters and a complete absence of accessible AI learning tools.
+  </p>
+
+  <div class="problem-grid">
+    <div class="problem-card">
+      <div class="problem-icon">🌊</div>
+      <div class="problem-title">Climate Disasters Close Schools
+        <span>பருவநிலை பேரிடர்</span>
+      </div>
+      <div class="problem-desc">
+        In late 2025, Cyclone Ditwah damaged <strong>1,382 schools</strong> and disrupted education for over <strong>550,000 children</strong> in the Central and Uva provinces. Students lost school bags, books, and stationery in the floods. By January 2026, many schools were still recovering.
+      </div>
+    </div>
+
+    <div class="problem-card">
+      <div class="problem-icon">📡</div>
+      <div class="problem-title">No Internet Access
+        <span>இணையதள வசதி இல்லை</span>
+      </div>
+      <div class="problem-desc">
+        Rural and estate areas in Sri Lanka have little or <strong>no internet connectivity</strong>. Every existing Tamil AI app requires internet, a paid account, or collects data through a free tier that moves to a paid model later.
+      </div>
+    </div>
+
+    <div class="problem-card">
+      <div class="problem-icon">💸</div>
+      <div class="problem-title">Cannot Afford Tutoring
+        <span>தனியார் கல்வி கட்டணம்</span>
+      </div>
+      <div class="problem-desc">
+        Household incomes in estate Tamil communities average <strong>Rs 30,000/month (~$95 USD)</strong>. Private tutoring, subscriptions, and even mobile data costs are out of reach for most families.
+      </div>
+    </div>
+
+    <div class="problem-card">
+      <div class="problem-icon">📄</div>
+      <div class="problem-title">Textbooks Invisible to Software
+        <span>மரபு எழுத்துரு பிரச்சனை</span>
+      </div>
+      <div class="problem-desc">
+        Sri Lankan Tamil government textbooks use <strong>legacy encoding fonts</strong> (Baamini, SHREE-TAM7, FMAbhaya). PyMuPDF, PDFBox, pdfplumber — every standard extractor returns <strong>zero readable text</strong> from these books.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ──────────────────────────────────────────────────────────── -->
+<section id="features" class="features-bg">
+  <div class="section-label center">The Solution</div>
+  <h2 class="section-title center">Everything a Student Needs — Offline</h2>
+  <p class="section-sub center">
+    Nunarivu AI runs entirely on the device. Once set up, it works in a village with no electricity infrastructure, during a cyclone, with the phone in airplane mode.
+  </p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <div class="feature-title">On-Device Gemma 4 E2B</div>
+      <span class="feature-title-ta">சாதன AI மாதிரி</span>
+      <div class="feature-desc">Runs Google Gemma 4 E2B via LiteRT-LM directly on the Adreno GPU. No API calls, no cloud, no data ever leaves the phone. Streams tokens in real time.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Tesseract OCR Pipeline</div>
+      <span class="feature-title-ta">Tamil OCR தொழில்நுட்பம்</span>
+      <div class="feature-desc">The only solution that reads legacy-font Tamil PDFs. Pages rendered at 2× scale → Tesseract (tam+eng, LSTM, PSM 6) → Tamil Unicode text. Cached permanently in SQLite — processed once, instant forever.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">🎤</div>
+      <div class="feature-title">Tamil Voice Q&A</div>
+      <span class="feature-title-ta">குரல் கேள்வி பதில்</span>
+      <div class="feature-desc">Tap the mic and ask in spoken Tamil or English. Uses Android's built-in ta-IN offline speech recognition — no internet needed. Waits patiently with 6-second silence tolerance.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">🔊</div>
+      <div class="feature-title">Text-to-Speech Answers</div>
+      <span class="feature-title-ta">பதில்களை படிக்கும்</span>
+      <div class="feature-desc">Every AI answer read aloud with one tap. Critical for students with reading difficulties or low literacy. Offline via Android's built-in TTS engine.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">📚</div>
+      <div class="feature-title">161 Tamil Textbooks</div>
+      <span class="feature-title-ta">161 தமிழ் பாடநூல்கள்</span>
+      <div class="feature-desc">Full Grade 10 and Grade 11 Sri Lankan Tamil curriculum — Maths, Science, History, Tamil Literature, Islam, Christianity, Hinduism, Geography, ICT, Health, Commerce and more. Auto-organised by grade and subject.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <div class="feature-title">Zero Hallucination Design</div>
+      <span class="feature-title-ta">தவறான தகவல் இல்லை</span>
+      <div class="feature-desc">The model answers only from the current textbook page. Hard block on outside knowledge — if the answer is not on that page, the app says so in Tamil. Safe for exam preparation.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">👤</div>
+      <div class="feature-title">Multi-Student Profiles</div>
+      <span class="feature-title-ta">பல மாணவர் சுயவிவரங்கள்</span>
+      <div class="feature-desc">Multiple students share one phone — siblings, classmates. Each profile has separate chat history, grade filter, language preference, learning disability mode, and AI persona.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">⏰</div>
+      <div class="feature-title">Study Reminders & Badges</div>
+      <span class="feature-title-ta">நினைவூட்டல் மற்றும் பதக்கங்கள்</span>
+      <div class="feature-desc">Daily study alarms with Tamil notifications — "படிக்க நேரம்! / Time to Study!" Achievement badges unlock by question count and study-day streaks. All tracked locally.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ───────────────────────────────────────────────────────── -->
+<section id="howitworks">
+  <div class="section-label center">Technical Pipeline</div>
+  <h2 class="section-title center">How It Works</h2>
+  <p class="section-sub center">
+    Every step runs locally on the device. No network calls, no external APIs, no telemetry.
+  </p>
+
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">PDF Page → High-Resolution Image</div>
+        <div class="step-desc">Android's native PdfRenderer renders each page at 2× scale (1044×1368 px) as a 32-bit PNG. White background for clean OCR contrast. Temp copy to ASCII path avoids Tamil filename bugs.</div>
+      </div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Tesseract OCR → Tamil Unicode Text</div>
+        <div class="step-desc">Tesseract 4 LSTM engine extracts Tamil + English text from the image. Result cached permanently in SQLite with chunk_index = −1.</div>
+        <div class="step-code">lang: 'tam+eng' · oem: 3 (LSTM) · psm: 6 (uniform block)</div>
+      </div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Student Asks a Question</div>
+        <div class="step-desc">Tap the mic → Android ta-IN offline STT → Tamil text. Or type in Tamil/English. The current page number is tracked by the PDF viewer.</div>
+      </div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Strict Page-Grounded Prompt → Gemma 4</div>
+        <div class="step-desc">The OCR text and question are assembled into a strict prompt that forbids outside knowledge. If the answer isn't on the page, Gemma 4 says so in Tamil.</div>
+        <div class="step-code">Answer STRICTLY using ONLY the page text below. Do NOT use any outside knowledge.</div>
+      </div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">LiteRT-LM Streams Tokens via JNI</div>
+        <div class="step-desc">A custom Kotlin InferencePlugin bridges Gemma 4 via LiteRT-LM C++ to Flutter's EventChannel. Tokens stream in real time to the UI. Adreno 710 GPU with automatic CPU fallback.</div>
+        <div class="step-code">EventChannel("com.nunarivu/stream") → Stream&lt;String&gt; tokens</div>
+      </div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">Answer Read Aloud in Tamil</div>
+        <div class="step-desc">Streaming answer displayed word-by-word and simultaneously read aloud via flutter_tts. One-tap "In English" or "தமிழில்" buttons re-explain in the other language.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TECH STACK ─────────────────────────────────────────────────────────── -->
+<section style="background:var(--bg2);">
+  <div class="section-label center">Tech Stack</div>
+  <h2 class="section-title center">Built With</h2>
+  <p class="section-sub center" style="margin-bottom:40px;">Every component chosen for reliability, offline-first operation, and zero cost to students.</p>
+
+  <div class="tech-grid" style="max-width:900px;margin:0 auto;">
+    <div class="tech-card"><span class="tech-emoji">🤖</span><div><div class="tech-name">Gemma 4 E2B</div><div class="tech-role">Google AI model · LiteRT-LM format</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">⚡</span><div><div class="tech-name">LiteRT-LM</div><div class="tech-role">On-device inference · Adreno GPU</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">📱</span><div><div class="tech-name">Flutter 3</div><div class="tech-role">Cross-platform Android app</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🔍</span><div><div class="tech-name">Tesseract OCR</div><div class="tech-role">Tamil + English · LSTM engine</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🗄️</span><div><div class="tech-name">SQLite</div><div class="tech-role">Chat history · OCR cache · Books</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🎤</span><div><div class="tech-name">Android STT</div><div class="tech-role">Offline ta-IN speech recognition</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🔊</span><div><div class="tech-name">Flutter TTS</div><div class="tech-role">Offline Tamil text-to-speech</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🏗️</span><div><div class="tech-name">Riverpod 2</div><div class="tech-role">State management · Dart</div></div></div>
+    <div class="tech-card"><span class="tech-emoji">🔤</span><div><div class="tech-name">Noto Sans Tamil</div><div class="tech-role">Tamil Unicode typography</div></div></div>
+  </div>
+</section>
+
+<!-- ── PRIZES ─────────────────────────────────────────────────────────────── -->
+<section id="hackathon" class="prizes-bg">
+  <div class="section-label center">Gemma 4 Good Hackathon</div>
+  <h2 class="section-title center">Competing in 4 Prize Tracks</h2>
+  <p class="section-sub center">Projects can win both a Main Track prize and a Special Technology prize simultaneously.</p>
+
+  <div class="prizes-grid">
+    <div class="prize-card">
+      <div class="prize-icon">📱</div>
+      <div class="prize-amount">$10,000</div>
+      <div class="prize-name">LiteRT Prize</div>
+      <div class="prize-desc">Most compelling use case built using Google AI Edge's LiteRT implementation of Gemma 4</div>
+    </div>
+    <div class="prize-card">
+      <div class="prize-icon">🌵</div>
+      <div class="prize-amount">$10,000</div>
+      <div class="prize-name">Cactus Prize</div>
+      <div class="prize-desc">Best local-first mobile application that intelligently routes tasks between models</div>
+    </div>
+    <div class="prize-card">
+      <div class="prize-icon">🎓</div>
+      <div class="prize-amount">$10,000</div>
+      <div class="prize-name">Future of Education</div>
+      <div class="prize-desc">Reimagine the learning journey through seamless multi-tool integration</div>
+    </div>
+    <div class="prize-card">
+      <div class="prize-icon">🌏</div>
+      <div class="prize-amount">$10,000</div>
+      <div class="prize-name">Digital Equity</div>
+      <div class="prize-desc">Break down barriers through linguistic diversity and tools that close the AI skills gap</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── INSTALL ────────────────────────────────────────────────────────────── -->
+<section id="install">
+  <div class="section-label center">Get Started</div>
+  <h2 class="section-title center">Install in 3 Steps</h2>
+  <p class="section-sub center">Works on any Android phone running Android 7.0 or newer. ~3 GB storage needed for the AI model.</p>
+
+  <div class="install-steps">
+    <div class="install-card">
+      <div class="install-num">1</div>
+      <div class="install-title">Install the APK</div>
+      <div class="install-desc">Download and install the app on any Android phone. Enable "Install from unknown sources" in Settings if needed.</div>
+      <a href="https://github.com/sanjeevakumar610/Nunarivu-AI/releases/download/v1.0.0/app-release.apk"
+         style="display:inline-block;margin-top:12px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+        📥 Download APK
+      </a>
+    </div>
+
+    <div class="install-card">
+      <div class="install-num">2</div>
+      <div class="install-title">Download the AI Model</div>
+      <div class="install-desc">Download Gemma 4 E2B from HuggingFace (free, ~2.4 GB). Copy the .litertlm file to your phone.</div>
+      <div class="install-code">Android/data/com.example.nunarivu_ai/files/models/</div>
+    </div>
+
+    <div class="install-card">
+      <div class="install-num">3</div>
+      <div class="install-title">Turn on Airplane Mode & Ask</div>
+      <div class="install-desc">Open the app → create a student profile → ask a question in Tamil. Turn on Airplane Mode — everything still works. ✅</div>
+    </div>
+  </div>
+
+  <div style="text-align:center;">
+    <a href="https://github.com/sanjeevakumar610/Nunarivu-AI" target="_blank" class="btn-secondary">
+      📖 Full Setup Guide on GitHub
+    </a>
+  </div>
+</section>
+
+<!-- ── PRIVACY ────────────────────────────────────────────────────────────── -->
+<section style="background:var(--bg2);">
+  <div class="privacy-bar">
+    <div class="privacy-icon float">🔒</div>
+    <div>
+      <div class="privacy-title">Zero data leaves your device. Ever.</div>
+      <div class="privacy-desc">
+        No analytics. No telemetry. No user account. No server calls. All chat history, student profiles, OCR text, and usage data is stored exclusively in local SQLite on the student's phone. Not even crash reports are sent anywhere.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <div class="footer-logo">
+        <div class="footer-logo-icon">ந</div>
+        <span class="footer-logo-text">நுணரிவு AI · Nunarivu AI</span>
+      </div>
+      <p class="footer-desc">
+        Offline Tamil AI Tutor for Sri Lankan students. Built for the students who need it most — with no internet, no money, and no options left.
+      </p>
+    </div>
+
+    <div class="footer-links">
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/sanjeevakumar610/Nunarivu-AI" target="_blank">GitHub Repository</a></li>
+        <li><a href="https://github.com/sanjeevakumar610/Nunarivu-AI/releases/download/v1.0.0/app-release.apk">Download APK</a></li>
+        <li><a href="https://github.com/sanjeevakumar610/Nunarivu-AI/blob/main/nunarivu_ai_kaggle_demo.ipynb" target="_blank">Kaggle Notebook</a></li>
+        <li><a href="https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm" target="_blank">Gemma 4 Model</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-links">
+      <h4>Hackathon</h4>
+      <ul>
+        <li><a href="https://www.kaggle.com/competitions/gemma-4-good-hackathon" target="_blank">Gemma 4 Good Hackathon</a></li>
+        <li><a href="#hackathon">Prize Tracks</a></li>
+        <li><a href="#problem">The Problem</a></li>
+        <li><a href="#howitworks">Architecture</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <span class="footer-copy">© 2025 Nunarivu AI · Open Source · CC-BY 4.0</span>
+    <span class="footer-trademark">Gemma is a trademark of Google LLC. Nunarivu AI is an independent project not affiliated with or endorsed by Google.</span>
+  </div>
+</footer>
+
+<script>
+  // Fade-in on scroll
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.style.opacity = '1';
+        e.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.problem-card, .feature-card, .pipeline-step, .tech-card, .prize-card, .install-card').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    el.style.transition = 'opacity .5s ease, transform .5s ease';
+    observer.observe(el);
+  });
+</script>
+</body>
+</html>
