@@ -3,7 +3,16 @@
 ### Offline Tamil AI Tutor for Sri Lankan Students
 **Built for students and teachers to learn in Tamil language using AI**
 
-**Gemma 4 Good Hackathon — Future of Education · Digital Equity & Inclusivity**
+---
+
+## Live Demo & Links
+
+| | |
+|---|---|
+| 🌐 **Landing Page** | https://nunarivu-ai.web.app |
+| 📱 **Download APK** | [app-release.apk](https://github.com/sanjeevakumar610/Nunarivu-AI/releases/download/v1.0.0/app-release.apk) |
+| 📓 **Kaggle Notebook** | [Runnable Tamil OCR + Gemma 4 demo](https://github.com/sanjeevakumar610/Nunarivu-AI/blob/main/nunarivu_ai_kaggle_demo.ipynb) |
+| 🤖 **AI Model** | [litert-community/gemma-4-E2B-it-litert-lm](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) |
 
 ---
 
@@ -42,7 +51,7 @@ Over **542,344 Tamil-medium students** in Sri Lanka study from government-issued
 
 ## The Solution — Nunarivu AI
 
-A **fully offline** Android app *(Sri Lankan students mostly use Android-based phones)* that runs **Google Gemma 4 E2B directly on the device** — no server, no subscription, no internet required after setup.
+A **fully offline** Android app *(Sri Lankan students mostly use Android-based phones)* that runs **Google Gemma 4 E2B IT** directly on the device — no server, no subscription, no internet required after setup.
 
 > *"நுணரிவு" (Nunarivu) means "intelligence" or "wisdom" in Tamil.*
 
@@ -50,19 +59,12 @@ Students access Tamil textbook PDF files in the app library, ask questions using
 
 ---
 
-## Demo
-
-📱 **Tested on**: Redmi Note 14 — a budget Android phone real students own
-🔇 **Airplane Mode ON** — every single feature still works
-
----
-
 ## Key Features
 
-### 🤖 On-Device Gemma 4 E2B
-- Runs **Google Gemma 4 E2B** via **LiteRT-LM** directly on the Android device
+### 🤖 On-Device Gemma 4 E2B IT
+- Runs **Google Gemma 4 E2B IT** (Instruction Tuned, 2B parameters, Edge variant) via **LiteRT-LM** directly on the Android device
 - No API calls, no cloud dependency, no data ever leaves the phone
-- Student side-loads the model once from HuggingFace — then it's theirs forever
+- Student side-loads the model once — then it's theirs forever
 
 ### 📚 Tamil Textbook Library (161 Books)
 - Auto-imports all PDFs from the app's external storage folder
@@ -84,6 +86,18 @@ PDF Page → pdfx renders to 1044×1368 PNG → Tesseract tam+eng → Tamil Unic
 - 6 seconds of silence tolerance — waits patiently for the student to finish thinking
 - Uses Android's offline `ta-IN` speech recognition — no internet needed
 
+### 🔄 Four Instant Follow-up Buttons
+Every AI answer has four one-tap follow-up buttons — no re-typing needed:
+
+| Button | What it does |
+|--------|-------------|
+| **தமிழில்** | Re-explains the same answer in simple Tamil |
+| **In English** | Re-explains the same answer in simple English |
+| **More Examples** | Re-runs inference asking for real-life examples of the concept |
+| **Explain More** | Re-runs inference asking for a deeper, step-by-step breakdown |
+
+Each button re-uses the same OCR page text as context — so all follow-up answers remain strictly grounded in the textbook page, never from outside knowledge.
+
 ### 📖 Page-Aware Answers — Zero Hallucination Risk
 - The model answers **only from the current page's OCR text**
 - Hard block on general knowledge — if the answer is not on that page, the app says exactly that in Tamil
@@ -94,30 +108,20 @@ PDF Page → pdfx renders to 1044×1368 PNG → Tesseract tam+eng → Tamil Unic
 - Critical for students with reading difficulties or low literacy
 - Works offline via Android's built-in TTS engine
 
-### 🌐 In English / தமிழில் Buttons
-Every AI reply has two instant re-explanation buttons:
-- **In English** — re-explains the same answer in simple English
-- **தமிழில்** — re-explains in simple Tamil
-
-No retyping needed — one tap switches the language of the entire explanation.
-
-### 🧠 Topic-Aware Chat Memory
-- Remembers last 5 exchanges and stays on the current topic
-- Encouragement appears only on genuinely deep or complex questions — not on every simple reply
-- Full conversation history saved per session in local SQLite
+### 👤 Multi-Student Profiles
+- Multiple student profiles on one device — for siblings or classmates sharing a phone
+- Per-profile: name, grade, language preference, learning disability mode, AI persona (Teacher / Friend / Parent)
+- Profile delete with confirmation dialog — permanently removes profile and all its chat history
+- Each profile switch opens a fresh blank chat window
 
 ### ⏰ Study Reminders and Badges
 - Daily study alarms with Tamil notification text — "படிக்க நேரம்! / Time to Study!"
 - Achievement badges unlocked by question count and study-day streaks
 - All progress tracked locally — no account, no cloud, no tracking
 
-### 👤 Multi-Student Profiles
-- Multiple student profiles on one device — for siblings or classmates sharing a phone
-- Per-profile: name, grade, language preference, learning disability mode, AI persona (Teacher / Friend / Parent)
-
 ---
 
-## Architecture
+## Technical Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -130,32 +134,48 @@ No retyping needed — one tap switches the language of the entire explanation.
 │  ModelService  │  OcrService    │  SttService       │
 │  (LiteRT-LM)   │  (Tesseract)   │  (ta-IN offline)  │
 │  PdfService    │  BookSeed      │  TtsService       │
-│  BadgeService  │  Reminders     │  DbService        │
+│  BadgeService  │  Reminders     │  DbService (v7)   │
 ├─────────────────────────────────────────────────────┤
 │           Local Storage — 100% on-device             │
-│  SQLite: profiles, chat history, OCR cache, books   │
-│  SharedPreferences: settings, theme, seed flags     │
+│  SQLite v7: profiles · chats · messages · pdfs      │
+│             pdf_chunks (OCR cache) · badges         │
+│             reminders                               │
+└─────────────────────────────────────────────────────┘
+          ↕ MethodChannel / EventChannel (JNI)
+┌─────────────────────────────────────────────────────┐
+│    InferencePlugin.kt — LiteRT-LM C++ Bridge        │
+│  Engine (GPU/CPU) · Conversation · AtomicReference  │
 └─────────────────────────────────────────────────────┘
 ```
 
-### How Gemma 4 is Integrated
+### Gemma 4 E2B IT — LiteRT-LM Integration
 
-A custom JNI bridge (`InferencePlugin.kt`) calls the LiteRT-LM C++ runtime and streams tokens back to Flutter through an `EventChannel`:
+A custom Kotlin JNI bridge (`InferencePlugin.kt`) calls the LiteRT-LM C++ runtime and streams tokens back to Flutter through an `EventChannel`:
 
 ```kotlin
-// InferencePlugin.kt
-fun inferStream(prompt: String): Unit {
-    // Calls LiteRT-LM native library
-    // Streams each token to Flutter via EventChannel sink
+// InferencePlugin.kt — streams tokens to Flutter in real time
+streamJob = scope.launch {
+    prevJob?.join()  // wait for previous job's finally block before creating new session
+    conversation = createConversationWithRecovery(engine)
+    conversation.sendMessageAsync(prompt).collect { chunk ->
+        withContext(Dispatchers.Main) { events.success(chunk.toString()) }
+    }
+    withContext(Dispatchers.Main) { events.endOfStream() }
 }
 ```
 
 ```dart
-// ModelService.dart
-Stream<String> inferStream(String prompt) {
-    // Each token updates the UI in real time as it is generated
-}
+// ModelService.dart — each token updates the UI as it arrives
+Stream<String> inferStream(String prompt) =>
+    _streamChannel.receiveBroadcastStream({'prompt': prompt}).cast<String>();
 ```
+
+**Key implementation details:**
+- **Backend**: Adreno 710 GPU via OpenCL, automatic CPU fallback
+- **Session management**: `AtomicReference<Conversation?>` tracks the one active native session — LiteRT-LM allows only one `Conversation` at a time globally
+- **Recovery**: On `FAILED_PRECONDITION: A session already exists`, the engine reloads (~7–8s) rather than waiting for GC (~30–45s natural recovery). This makes the Tamil / English / More Examples / Explain More buttons reliable immediately after stopping a response.
+- **Model format**: `.litertlm` single file — not `.gguf`
+- **Performance**: First token ~8–12s; streaming ~4–6 tokens/sec on Adreno 710
 
 ### OCR Pipeline
 
@@ -172,7 +192,7 @@ PDF file
 ### Prompt Design — Exam Safety First
 
 ```
-You are a teacher answering a student's question about their textbook.
+You are a teacher answering a student's question about their textbook "[title]", page N.
 Answer STRICTLY using ONLY the page text below.
 Do NOT use any outside knowledge.
 If the answer cannot be found in the page text, reply ONLY with:
@@ -196,9 +216,9 @@ Answer in Tamil:
 - Approximately 3 GB of free storage for the model
 
 ### Step 1 — Install the APK
-Download `app-debug.apk` from [Releases](https://github.com/sanjeevakumar610/Nunarivu-AI/releases) and install it.
+Download `app-release.apk` from [Releases](https://github.com/sanjeevakumar610/Nunarivu-AI/releases) and install it.
 
-### Step 2 — Download the Gemma 4 Model
+### Step 2 — Download the Gemma 4 E2B IT Model
 The model is Google's official release on HuggingFace (free, requires a HuggingFace account):
 
 ```
@@ -227,7 +247,8 @@ The app auto-scans and imports it on next launch.
 1. Open the app → create a student profile
 2. **Chat tab** → ask any question in Tamil or English
 3. **Library tab** → open a textbook → ask about the page you are reading
-4. **Turn on Airplane Mode and ask again** — it still works ✅
+4. Tap **தமிழில்**, **In English**, **More Examples**, or **Explain More** for instant follow-ups
+5. **Turn on Airplane Mode and ask again** — it still works ✅
 
 ---
 
@@ -236,13 +257,13 @@ The app auto-scans and imports it on next launch.
 | Component | Technology |
 |-----------|-----------|
 | Framework | Flutter 3 / Dart |
-| AI Model | Google Gemma 4 E2B — LiteRT-LM |
+| AI Model | Google Gemma 4 E2B IT — LiteRT-LM format |
 | Model Runtime | LiteRT-LM C++ via custom Android JNI plugin |
 | OCR Engine | Tesseract 4 LSTM — Tamil + English |
 | PDF Page Rendering | pdfx (Android native PdfRenderer) |
 | PDF Viewer | Syncfusion Flutter PDF Viewer |
 | State Management | Flutter Riverpod 2 |
-| Local Database | SQLite via sqflite |
+| Local Database | SQLite v7 via sqflite |
 | Speech-to-Text | Android offline ta-IN STT |
 | Text-to-Speech | flutter_tts |
 | Typography | Noto Sans Tamil |
@@ -254,22 +275,14 @@ The app auto-scans and imports it on next launch.
 
 | Challenge | Our Solution |
 |-----------|-------------|
-| Cyclone/flood disrupts schools — no physical access | 100% offline app works anywhere on any Android phone |
+| Cyclone/flood disrupts schools | 100% offline app works anywhere on any Android phone |
 | No internet in rural and estate Tamil areas | Works after one-time model download — zero connectivity needed |
 | Tamil textbook PDFs unreadable by software | Tesseract OCR on rendered page images — page-perfect text extraction |
 | No Tamil-language AI tools for students | Full Tamil UI, Tamil STT, Tamil TTS, Tamil answers |
 | Exam risk from AI hallucination | Hard block — model reads only from the textbook page, never guesses |
 | Cannot afford tutoring (~$93/month salary) | Free, open source, works on any budget Android phone |
 | Multiple students sharing one device | Multi-profile with separate history, badges, and settings per student |
-
----
-
-## Hackathon Categories
-
-**Primary**: Future of Education
-**Secondary**: Digital Equity & Inclusivity
-
-Nunarivu AI directly addresses SDG 4 (Quality Education) for Tamil-medium students in Sri Lanka — a community that is underserved by every existing AI education product, and increasingly cut off from physical schooling by climate disasters.
+| Need same concept explained differently | Four follow-up buttons: Tamil / English / More Examples / Explain More |
 
 ---
 
@@ -290,7 +303,7 @@ All chat history, student profiles, OCR text, and usage data is stored exclusive
 git clone https://github.com/sanjeevakumar610/Nunarivu-AI.git
 cd Nunarivu-AI
 flutter pub get
-flutter build apk --debug
+flutter build apk --release
 ```
 
 The LiteRT-LM native library (`liblitert_lm_main_jni.so`) is compiled via the NDK and placed in `android/app/src/main/jniLibs/arm64-v8a/`. See `android/app/src/main/kotlin/.../InferencePlugin.kt` for the JNI interface.
