@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/profile.dart';
-import '../services/chat_session_service.dart';
 import '../services/profile_service.dart';
 import 'chat_session_provider.dart';
 
@@ -16,10 +15,9 @@ class CurrentProfileNotifier extends Notifier<Profile?> {
   /// Switch to profile [p].
   ///
   /// - If switching to a **different** profile: saves the current chatId for
-  ///   the outgoing profile, then restores the incoming profile's last chatId.
+  ///   the outgoing profile, then starts a fresh blank chat for the new profile.
   /// - If updating the **same** profile (grade change, settings save): just
-  ///   updates the profile state — does NOT touch chatId so the current chat
-  ///   is never accidentally cleared.
+  ///   updates the profile state — does NOT touch chatId so the active chat stays open.
   Future<void> setActive(Profile p) async {
     await ref.read(profileServiceProvider).touch(p);
 
@@ -42,17 +40,8 @@ class CurrentProfileNotifier extends Notifier<Profile?> {
       // 2. Activate new profile first so _messagesProvider sees the right profile.
       state = p;
 
-      // 3. Restore the incoming profile's last chatId.
-      //    If none saved (first switch / fresh install), fall back to the most
-      //    recent chat in the DB so the student isn't dropped into a blank chat.
-      String? restored = prefs.getString('$_kLastChatId${p.id}');
-      if (restored == null) {
-        final sessions = await ref
-            .read(chatSessionServiceProvider)
-            .loadForProfile(p.id);
-        if (sessions.isNotEmpty) restored = sessions.first.id;
-      }
-      ref.read(currentChatIdProvider.notifier).state = restored;
+      // 3. Always start with a fresh blank chat on profile switch.
+      ref.read(currentChatIdProvider.notifier).state = null;
     } else {
       // Same profile — just refresh state (settings/grade update).
       // chatId intentionally left unchanged so the active chat stays open.

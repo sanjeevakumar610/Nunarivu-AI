@@ -50,6 +50,10 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     // LiteRT-LM engine — null until loadModel() succeeds
     private var engine: Engine? = null
 
+    // Stored so we can reload the engine on FAILED_PRECONDITION
+    @Volatile private var lastModelPath: String? = null
+    @Volatile private var lastCacheDir: String? = null
+
     // Coroutine scope cancelled in onDetachedFromEngine
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -90,17 +94,26 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                         return
                     }
 
-                    streamJob?.cancel()
-                    // Close any lingering conversation BEFORE the new job starts,
+                    // Cancel the previous streaming job and wait for its finally block
+                    // to run before creating a new conversation — otherwise the native
+                    // session slot may still be occupied when createConversation() fires.
+                    val prevJob = streamJob
+                    prevJob?.cancel()
+
+                    // Close any lingering conversation synchronously before launching
                     // so the native session slot is free when createConversation() runs.
                     activeConversation.getAndSet(null)
                         ?.let { try { it.close() } catch (_: Exception) {} }
 
                     streamJob = scope.launch {
+                        // Wait for the previous job's finally block (conversation.close())
+                        // to complete before we attempt createConversation().
+                        prevJob?.join()
+
                         var conversation: Conversation? = null
                         try {
                             Log.i(TAG, "Stream inference start (hasImage=${imagePath.isNotEmpty()})")
-                            conversation = eng.createConversation()
+                            conversation = createConversationWithRecovery(eng)
                             activeConversation.set(conversation)
 
                             val flow = if (imagePath.isNotEmpty()) {
@@ -170,6 +183,8 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         closeEngine()
 
         val cacheDir = appContext?.cacheDir?.path
+        lastModelPath = modelPath
+        lastCacheDir  = cacheDir
 
         scope.launch {
             val loaded = tryLoadEngine(modelPath, cacheDir, gpu = true)
@@ -205,6 +220,56 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
     }
 
+    /**
+     * Creates a new Conversation, recovering automatically if the native
+     * session slot is still occupied (FAILED_PRECONDITION).
+     *
+     * Recovery: close and reload the Engine (~7–8s) which guarantees the
+     * slot is freed, then retry createConversation().
+     */
+    private suspend fun createConversationWithRecovery(eng: Engine): Conversation {
+        return try {
+            eng.createConversation()
+        } catch (ex: Exception) {
+            val msg = ex.message ?: ""
+            if ("FAILED_PRECONDITION" in msg || "session already exists" in msg) {
+                Log.w(TAG, "FAILED_PRECONDITION — reloading engine to free native session slot")
+                reloadEngine()
+                val freshEngine = engine
+                    ?: throw IllegalStateException("Engine reload failed")
+                freshEngine.createConversation()
+            } else {
+                throw ex
+            }
+        }
+    }
+
+    /**
+     * Closes the current Engine and reopens it using the stored model path.
+     * Blocks until the new engine is ready (or throws on total failure).
+     */
+    private fun reloadEngine() {
+        val modelPath = lastModelPath ?: run {
+            Log.e(TAG, "Cannot reload engine — no model path stored")
+            return
+        }
+        val cacheDir = lastCacheDir
+
+        Log.i(TAG, "Reloading engine: $modelPath")
+        try { engine?.close() } catch (_: Exception) {}
+        engine = null
+
+        val reloaded = tryLoadEngine(modelPath, cacheDir, gpu = true)
+            ?: tryLoadEngine(modelPath, cacheDir, gpu = false)
+
+        if (reloaded != null) {
+            engine = reloaded
+            Log.i(TAG, "Engine reloaded successfully")
+        } else {
+            Log.e(TAG, "Engine reload failed on both GPU and CPU")
+        }
+    }
+
     // ── infer (non-streaming fallback) ────────────────────────────────────────
 
     private fun handleInfer(call: MethodCall, result: MethodChannel.Result) {
@@ -216,15 +281,19 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
         // Cancel any active streaming job and close its conversation before
         // attempting a new synchronous inference.
-        streamJob?.cancel()
+        val prevJob = streamJob
+        prevJob?.cancel()
         activeConversation.getAndSet(null)
             ?.let { try { it.close() } catch (_: Exception) {} }
 
         scope.launch {
+            // Wait for the previous streaming job's finally block to complete.
+            prevJob?.join()
+
             var conversation: Conversation? = null
             try {
                 Log.i(TAG, "Infer (non-stream) start (hasImage=${imagePath.isNotEmpty()})")
-                conversation = currentEngine.createConversation()
+                conversation = createConversationWithRecovery(currentEngine)
                 activeConversation.set(conversation)
 
                 val sb = StringBuilder()
