@@ -2,18 +2,17 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum ModelState { notFound, loading, ready, error }
 
 // LiteRT-LM format — single bundled file (language model + vision encoder).
-// Download from: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 const _defaultModelFile = 'gemma-4-E2B-it-litert-lm.litertlm';
 
-/// Search order on Android (no special permissions needed for the first path):
-///   1. App-specific external dir (/storage/emulated/0/Android/data/<pkg>/files/models/)
-///   2. App documents dir (internal — last-resort fallback)
-///   3. Legacy public path /storage/emulated/0/nunarivu/models/ (only works
-///      with MANAGE_EXTERNAL_STORAGE permission)
+/// SharedPreferences key — the last path from which the model loaded successfully.
+const _kLastModelPath = 'last_model_path';
+
+/// Standard search directories for the model file.
 Future<List<String>> _candidateModelDirs() async {
   final dirs = <String>[];
   try {
@@ -29,22 +28,35 @@ Future<List<String>> _candidateModelDirs() async {
 }
 
 class ModelServiceNotifier extends Notifier<ModelState> {
-  static const _channel = MethodChannel('com.nunarivu/inference');
-
-  // EventChannel for real-time streaming tokens.
+  static const _channel       = MethodChannel('com.nunarivu/inference');
   static const _streamChannel = EventChannel('com.nunarivu/stream');
 
-  /// Resolved model dir from the last successful auto-load attempt. Useful
-  /// for showing the user where to push files when the model is missing.
   String? _searchedDirsSummary;
   String? get searchedDirsSummary => _searchedDirsSummary;
 
   @override
   ModelState build() => ModelState.notFound;
 
+  /// Searches all candidate directories (including the previously saved path)
+  /// and loads the first model file found.
   Future<void> tryAutoLoad() async {
     final dirs = await _candidateModelDirs();
+
+    // Check the last known-good path first (saved by loadModel after success).
+    final prefs = await SharedPreferences.getInstance();
+    final lastPath = prefs.getString(_kLastModelPath);
+    if (lastPath != null) {
+      final dir = lastPath.contains('/') ? lastPath.substring(0, lastPath.lastIndexOf('/')) : '';
+      if (dir.isNotEmpty && !dirs.contains(dir)) dirs.insert(0, dir);
+    }
+
     _searchedDirsSummary = dirs.join('\n');
+
+    // Try lastPath directly (it is the full file path, not a dir).
+    if (lastPath != null && await File(lastPath).exists()) {
+      await loadModel(lastPath);
+      return;
+    }
 
     for (final dir in dirs) {
       final modelPath = '$dir/$_defaultModelFile';
@@ -56,14 +68,16 @@ class ModelServiceNotifier extends Notifier<ModelState> {
     state = ModelState.notFound;
   }
 
+  /// Loads the model at [modelPath] and saves the path so [tryAutoLoad]
+  /// can find it on the next app launch without needing to browse again.
   Future<void> loadModel(String modelPath) async {
     state = ModelState.loading;
     try {
-      await _channel.invokeMethod<void>('loadModel', {
-        'modelPath': modelPath,
-        // mmprojPath removed: LiteRT-LM bundles vision encoder in the .litertlm file
-      });
+      await _channel.invokeMethod<void>('loadModel', {'modelPath': modelPath});
       state = ModelState.ready;
+      // Persist for next launch.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kLastModelPath, modelPath);
     } on PlatformException catch (e) {
       state = ModelState.error;
       throw Exception('Model load failed: ${e.message}');
@@ -71,7 +85,6 @@ class ModelServiceNotifier extends Notifier<ModelState> {
   }
 
   /// Non-streaming inference — returns the full response string.
-  /// Kept for fallback / simple use-cases.
   Future<String> infer(String prompt, {String? imagePath}) async {
     if (state != ModelState.ready) throw StateError('Model not ready');
     try {
@@ -86,36 +99,25 @@ class ModelServiceNotifier extends Notifier<ModelState> {
   }
 
   /// Streaming inference — yields token chunks as they are generated.
-  /// The [EventChannel] arguments trigger `onListen` in [InferencePlugin],
-  /// which starts the LiteRT-LM coroutine and emits each chunk via the sink.
   Stream<String> inferStream(String prompt, {String? imagePath}) {
     if (state != ModelState.ready) {
       return Stream.error(StateError('Model not ready'));
     }
     return _streamChannel
-        .receiveBroadcastStream({
-          'prompt': prompt,
-          'imagePath': imagePath ?? '',
-        })
+        .receiveBroadcastStream({'prompt': prompt, 'imagePath': imagePath ?? ''})
         .cast<String>();
   }
 
   /// Like [infer] but prepends a document-context block to the prompt.
-  /// Used when chatting about a PDF or lesson.
   Future<String> inferWithContext({
     required String prompt,
     required String contextText,
     String? imagePath,
   }) {
     final combined =
-        '''Use the following document content to answer the question.
-If the answer is not in the document, say so politely.
-
-DOCUMENT:
-$contextText
-
-QUESTION:
-$prompt''';
+        'Use the following document content to answer the question.\n'
+        'If the answer is not in the document, say so politely.\n\n'
+        'DOCUMENT:\n$contextText\n\nQUESTION:\n$prompt';
     return infer(combined, imagePath: imagePath);
   }
 }
