@@ -286,10 +286,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _textCtrl.clear();
     _scrollToBottom(); // show the user message immediately before inference starts
 
-    // Build full prompt: system context + user question (no history — each Q is independent)
+    // Build full prompt: system context + user question (no history — each Q is independent).
+    // End with "Answer:" so the model has a clear signal to start generating a response,
+    // mirroring the library chat's proven "_buildPrompt" pattern that always works.
     final systemPrompt = profile.buildSystemPrompt();
-    String fullPrompt = systemPrompt;
-    fullPrompt += '\n\nStudent: $displayText';
+    final fullPrompt   = '$systemPrompt\n\nStudent: $displayText\n\nAnswer:';
 
     // Always pass imagePath: null (Gemma 4 E2B is text-only)
     await _runInference(fullPrompt,
@@ -369,7 +370,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
 
     final systemPrompt = profile.buildSystemPrompt();
-    final fullPrompt   = '$systemPrompt\n\n$followUp';
+    final fullPrompt   = '$systemPrompt\n\n$followUp\n\nAnswer:';
 
     var chatId = ref.read(currentChatIdProvider);
     if (chatId == null) {
@@ -416,7 +417,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           'Answer to re-explain:\n${assistantMsg.text}';
 
     final systemPrompt = profile.buildSystemPrompt();
-    final fullPrompt   = '$systemPrompt\n\n$instruction';
+    final fullPrompt   = '$systemPrompt\n\n$instruction\n\nAnswer:';
 
     var chatId = ref.read(currentChatIdProvider);
     if (chatId == null) {

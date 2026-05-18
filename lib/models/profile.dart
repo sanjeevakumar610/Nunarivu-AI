@@ -208,112 +208,57 @@ class Profile {
       );
 
   // ── System prompt built from profile ─────────────────────────────────────
+  //
+  // Keep this SHORT and simple — the Gemma 4 E2B model returns 0 tokens when
+  // the system prompt is too long or contains complex multi-line structure.
+  // The library chat's _buildPrompt (which always works) is the reference:
+  // short, plain English, no empty sections, ends with a clear answer signal.
 
   String buildSystemPrompt() {
     final buf = StringBuffer();
 
-    // ── Persona-aware opening ────────────────────────────────────────────────
+    // Role
     switch (aiPersona) {
       case AiPersona.teacher:
-        buf.writeln(
-            'You are Nunarivu AI (நுணரிவு AI), a friendly and patient teacher '
-            'for Sri Lankan students. Always be encouraging and warm.');
+        buf.write('You are Nunarivu AI, a helpful and patient tutor for $name.');
       case AiPersona.friend:
-        buf.writeln(
-            'You are Nunarivu AI (நுணரிவு AI), the student\'s study buddy. '
-            'Talk like a caring friend. You may call them "$name" casually '
-            'or say "my friend". Keep it friendly but always focused on learning.');
+        buf.write('You are Nunarivu AI, a friendly study buddy for $name.');
       case AiPersona.parent:
-        buf.writeln(
-            'You are Nunarivu AI (நுணரிவு AI), like a caring parent helping '
-            'with studies. Be nurturing, patient, and supportive. '
-            'Use warm, encouraging language like a loving parent would.');
+        buf.write('You are Nunarivu AI, a caring and supportive tutor for $name.');
     }
-    buf.writeln();
-    buf.writeln('STUDENT PROFILE:');
-    buf.writeln('- Name: $name');
-    if (age != null) buf.writeln('- Age / வயது: $age');
-    buf.writeln('- Level: ${ageGroup.english} / ${ageGroup.tamil}');
+
+    // Grade / level — only if set
     if (grade != null && grade!.isNotEmpty) {
-      buf.writeln('- Grade / தரம்: $grade');
+      buf.write(' Student is in $grade.');
+    } else {
+      buf.write(' Student level: ${ageGroup.english}.');
     }
-    if (schoolName != null && schoolName!.isNotEmpty) {
-      buf.writeln('- School / பாடசாலை: $schoolName');
-    }
-    final langs = [
-      if (langTamil) 'Tamil (தமிழ்)',
-      if (langEnglish) 'English',
-    ];
-    if (langs.isNotEmpty) {
-      buf.writeln('- Language preference: ${langs.join(' & ')}');
-    }
-    buf.writeln();
-    buf.writeln('TEACHING INSTRUCTIONS:');
+
+    // Teaching flags — only written when enabled, so section is never empty
     if (instrExplainWithExamples) {
-      buf.writeln(
-          '- Always explain concepts with at least one concrete, '
-          'real-life example the student can relate to.');
+      buf.write(' Always include a real-life example in your explanation.');
     }
     if (instrLearningDisability) {
-      buf.writeln(
-          '- This student has a learning disability. Use very simple language, '
-          'short sentences (under 15 words each), bullet points, '
-          'and repeat key points.');
-    }
-    if (customInstructions != null && customInstructions!.trim().isNotEmpty) {
-      buf.writeln('- ${customInstructions!.trim()}');
+      buf.write(' Use very simple language and short sentences (under 15 words each).');
     }
     if (replyLength == ReplyLength.short) {
-      buf.writeln('- Keep replies brief — 2 to 4 sentences maximum.');
+      buf.write(' Keep the reply to 2-4 sentences.');
     } else if (replyLength == ReplyLength.long) {
-      buf.writeln(
-          '- Give detailed, thorough explanations with multiple examples.');
+      buf.write(' Give a detailed explanation with examples.');
     }
-    buf.writeln();
+    if (customInstructions != null && customInstructions!.trim().isNotEmpty) {
+      buf.write(' ${customInstructions!.trim()}');
+    }
 
-    // ── Interaction style ────────────────────────────────────────────────────
-    buf.writeln('INTERACTION STYLE:');
-    buf.writeln(
-        '- Do NOT start every reply with "Hello $name" or "வணக்கம் $name". '
-        'Greet the student only on the very first message of a new conversation. '
-        'After that, go straight to the answer without a greeting.');
-    buf.writeln(
-        '- ENCOURAGEMENT RULE: Only add a brief motivational line when the student '
-        'asks something genuinely deep, thoughtful, or complex — for example a '
-        'multi-step problem, a "why" question, a creative question, or when they '
-        'clearly worked hard to understand something. '
-        'Do NOT add encouragement for simple recall questions ("what is X?"), '
-        'greetings, or short follow-ups. '
-        'When you do add it, place it on its own line at the end, keep it under '
-        '10 words, and choose a fresh phrase every time. '
-        'Examples (do not repeat the same one twice in a row):\n'
-        '  • கேள்வி கேட்பது அறிவின் அடையாளம் · Great question!\n'
-        '  • சிந்திக்கிறாய் — அது மிக நல்லது · Keep thinking like this!\n'
-        '  • இப்படி கேட்பது புத்திசாலித்தனம் · Smart thinking!\n'
-        '  • உன் ஆர்வம் உன்னை உயர்த்தும் · Your curiosity will take you far\n'
-        '  • விடாமுயற்சி வெற்றியின் திறவுகோல் · Persistence is the key');
-    buf.writeln(
-        '- If the student asks about entertainment, games, or off-topic things, '
-        'gently redirect: "படிப்பு உங்களை உயர்த்தும் / Studies will help you grow. '
-        'Let\'s focus on learning!"');
-    buf.writeln(
-        '- Stay on topic within this chat session. '
-        'If the conversation becomes very long, kindly suggest starting a new chat '
-        'for a fresh focused discussion.');
-    buf.writeln();
-
+    // Language
     if (langTamil && langEnglish) {
-      buf.writeln(
-          'LANGUAGE: Match the student\'s language. '
-          'Tamil question → Tamil answer. English question → English answer.');
+      buf.write(' Reply in Tamil if the student writes in Tamil, English if in English.');
     } else if (langTamil) {
-      buf.writeln('LANGUAGE: Always respond in Tamil (தமிழ்).');
+      buf.write(' Always reply in Tamil.');
     } else {
-      buf.writeln('LANGUAGE: Always respond in English.');
+      buf.write(' Always reply in English.');
     }
-    buf.writeln();
-    buf.writeln(
-        'Keep responses appropriate for a ${ageGroup.english} student.');
+
     return buf.toString();
   }
 }

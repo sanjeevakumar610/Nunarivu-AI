@@ -20,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicReference
 
 private const val TAG = "NunarivuInference"
 private const val CHANNEL = "com.nunarivu/inference"
@@ -55,6 +56,12 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     // Active streaming job — cancelled when Dart unsubscribes
     private var streamJob: Job? = null
 
+    // Tracks the currently-open Conversation so it can be closed before a new
+    // one is created.  LiteRT-LM only supports ONE conversation at a time
+    // globally; failing to close the previous one causes:
+    //   FAILED_PRECONDITION: A session already exists.
+    private val activeConversation = AtomicReference<Conversation?>(null)
+
     // ── FlutterPlugin lifecycle ──────────────────────────────────────────────
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -84,11 +91,17 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     }
 
                     streamJob?.cancel()
+                    // Close any lingering conversation BEFORE the new job starts,
+                    // so the native session slot is free when createConversation() runs.
+                    activeConversation.getAndSet(null)
+                        ?.let { try { it.close() } catch (_: Exception) {} }
+
                     streamJob = scope.launch {
                         var conversation: Conversation? = null
                         try {
                             Log.i(TAG, "Stream inference start (hasImage=${imagePath.isNotEmpty()})")
                             conversation = eng.createConversation()
+                            activeConversation.set(conversation)
 
                             val flow = if (imagePath.isNotEmpty()) {
                                 conversation.sendMessageAsync(
@@ -115,6 +128,8 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                                 events.error("INFER_FAIL", ex.message, null)
                             }
                         } finally {
+                            // Remove from tracking first, then close
+                            activeConversation.compareAndSet(conversation, null)
                             try { conversation?.close() } catch (_: Exception) {}
                         }
                     }
@@ -199,11 +214,18 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val currentEngine = engine
             ?: return result.error("NOT_LOADED", "Model is not loaded", null)
 
+        // Cancel any active streaming job and close its conversation before
+        // attempting a new synchronous inference.
+        streamJob?.cancel()
+        activeConversation.getAndSet(null)
+            ?.let { try { it.close() } catch (_: Exception) {} }
+
         scope.launch {
             var conversation: Conversation? = null
             try {
                 Log.i(TAG, "Infer (non-stream) start (hasImage=${imagePath.isNotEmpty()})")
                 conversation = currentEngine.createConversation()
+                activeConversation.set(conversation)
 
                 val sb = StringBuilder()
                 if (imagePath.isNotEmpty()) {
@@ -227,6 +249,7 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     result.error("INFER_FAIL", ex.message, null)
                 }
             } finally {
+                activeConversation.compareAndSet(conversation, null)
                 try { conversation?.close() } catch (_: Exception) {}
             }
         }
@@ -235,6 +258,10 @@ class InferencePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     // ── Cleanup ──────────────────────────────────────────────────────────────
 
     private fun closeEngine() {
+        streamJob?.cancel()
+        streamJob = null
+        activeConversation.getAndSet(null)
+            ?.let { try { it.close() } catch (_: Exception) {} }
         try { engine?.close() } catch (_: Exception) {}
         engine = null
     }
