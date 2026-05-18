@@ -79,6 +79,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ── Inference cancellation ────────────────────────────────────────────────
   StreamSubscription<String>? _inferSubscription;
   Completer<void>? _streamCompleter;
+  // Set to true when the user presses Stop so _runInference skips the
+  // non-streaming fallback (which would re-run the full inference).
+  bool _wasStopped = false;
 
   @override
   void dispose() {
@@ -165,6 +168,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       await _streamCompleter!.future;
       final finalText = ref.read(_streamingTextProvider) ?? '';
       if (finalText.isNotEmpty) {
+        // Normal path: streaming produced tokens (or user stopped mid-stream).
         await ref.read(_messagesProvider.notifier).add(ChatMessage(
               id: _uuid.v4(),
               profileId: profileId,
@@ -173,9 +177,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               text: finalText,
               timestamp: DateTime.now(),
             ));
-      } else {
-        // EventChannel stream completed with zero tokens — fall back to the
-        // non-streaming MethodChannel infer() so the user still gets a reply.
+      } else if (!_wasStopped) {
+        // Zero tokens AND not manually stopped — fall back to non-streaming
+        // MethodChannel infer() so the user still gets a reply.
         try {
           final response = await ref
               .read(modelServiceProvider.notifier)
@@ -204,17 +208,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ));
         }
       }
+      // _wasStopped + empty text: user stopped before any tokens arrived —
+      // nothing to save.
     } catch (e) {
-      await ref.read(_messagesProvider.notifier).add(ChatMessage(
-            id: _uuid.v4(),
-            profileId: profileId,
-            chatId: chatId,
-            role: MessageRole.assistant,
-            text: 'பிழை / Error: $e\n'
-                'Settings → Advanced → மாதிரி மீண்டும் ஏற்று / Reload Model.',
-            timestamp: DateTime.now(),
-          ));
+      if (!_wasStopped) {
+        await ref.read(_messagesProvider.notifier).add(ChatMessage(
+              id: _uuid.v4(),
+              profileId: profileId,
+              chatId: chatId,
+              role: MessageRole.assistant,
+              text: 'பிழை / Error: $e\n'
+                  'Settings → Advanced → மாதிரி மீண்டும் ஏற்று / Reload Model.',
+              timestamp: DateTime.now(),
+            ));
+      }
     } finally {
+      _wasStopped = false;
       _inferSubscription = null;
       _streamCompleter = null;
       ref.read(_streamingTextProvider.notifier).state = null;
@@ -223,34 +232,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  /// Cancels the current inference, saves whatever was generated so far,
-  /// and resets UI state immediately.
+  /// Cancels the current inference mid-stream and resets UI state immediately.
+  ///
+  /// Any tokens already streamed are saved by [_runInference]'s normal
+  /// post-await path — we just signal it to skip the non-streaming fallback
+  /// via [_wasStopped], then complete its future so it resumes.
+  ///
+  /// IMPORTANT: do NOT clear [_streamingTextProvider] here.  The microtask
+  /// that resumes [_runInference] needs to read it to save partial text.
+  /// The [_runInference] `finally` block clears it after saving.
   void _stopInference() {
-    final partialText = ref.read(_streamingTextProvider) ?? '';
-    // Complete the future first so _runInference's await resumes cleanly
+    _wasStopped = true;
     final completer = _streamCompleter;
     _streamCompleter = null;
     _inferSubscription?.cancel();
     _inferSubscription = null;
-    completer?.complete();
-    // Reset state immediately for responsive UI
-    ref.read(_streamingTextProvider.notifier).state = null;
+    // Hide the spinner immediately for a responsive feel.
     ref.read(_isThinkingProvider.notifier).state = false;
-    // Save partial text as a message (non-blocking)
-    if (partialText.isNotEmpty && mounted) {
-      final profile = ref.read(currentProfileProvider);
-      final chatId  = ref.read(currentChatIdProvider);
-      if (profile != null) {
-        unawaited(ref.read(_messagesProvider.notifier).add(ChatMessage(
-              id: _uuid.v4(),
-              profileId: profile.id,
-              chatId: chatId,
-              role: MessageRole.assistant,
-              text: partialText,
-              timestamp: DateTime.now(),
-            )));
-      }
-    }
+    // Resume _runInference's await — it will read _streamingTextProvider,
+    // save whatever partial text exists, then clear everything in finally.
+    completer?.complete();
   }
 
   // ── Core send ─────────────────────────────────────────────────────────────
