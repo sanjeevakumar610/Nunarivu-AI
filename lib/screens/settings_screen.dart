@@ -224,28 +224,84 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Center(
-              child: TextButton.icon(
-                onPressed: () async {
-                  await ref.read(currentProfileProvider.notifier).clear();
-                  if (!context.mounted) return;
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                        builder: (_) => const ProfilePickerScreen()),
-                  );
-                },
-                icon: const Icon(Icons.swap_horiz),
-                label: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('சுயவிவரம் மாற்று',
-                        style: GoogleFonts.notoSansTamil(fontSize: 13)),
-                    Text('Switch profile',
-                        style: GoogleFonts.notoSansTamil(
-                            fontSize: 10, color: cs.onSurfaceVariant)),
-                  ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton.icon(
+                  onPressed: () async {
+                    await ref.read(currentProfileProvider.notifier).clear();
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                          builder: (_) => const ProfilePickerScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.swap_horiz),
+                  label: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('சுயவிவரம் மாற்று',
+                          style: GoogleFonts.notoSansTamil(fontSize: 13)),
+                      Text('Switch profile',
+                          style: GoogleFonts.notoSansTamil(
+                              fontSize: 10, color: cs.onSurfaceVariant)),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: cs.error),
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('சுயவிவரம் நீக்கவா?',
+                            style: GoogleFonts.notoSansTamil(
+                                fontWeight: FontWeight.bold)),
+                        content: Text(
+                          'Delete profile "${profile.name}"?\n\n'
+                          'All chats and messages for this profile will be permanently deleted.',
+                          style: GoogleFonts.notoSansTamil(fontSize: 13),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text('ரத்து · Cancel',
+                                style: GoogleFonts.notoSansTamil()),
+                          ),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: cs.error),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text('நீக்கு · Delete',
+                                style: GoogleFonts.notoSansTamil()),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm != true || !context.mounted) return;
+                    await ref.read(profileServiceProvider).delete(profile);
+                    await ref.read(currentProfileProvider.notifier).clear();
+                    ref.invalidate(allProfilesProvider);
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                          builder: (_) => const ProfilePickerScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                  label: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('சுயவிவரம் நீக்கு',
+                          style: GoogleFonts.notoSansTamil(fontSize: 13)),
+                      Text('Delete profile',
+                          style: GoogleFonts.notoSansTamil(
+                              fontSize: 10, color: cs.error.withOpacity(0.7))),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const Divider(height: 32),
           ],
