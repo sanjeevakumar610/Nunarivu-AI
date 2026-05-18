@@ -60,3 +60,6 @@ LOCAL_NOTES.md
 
 # USB drive distribution folder — contains large APK + model files
 usb_drive/
+
+# Landing page — hosted separately on Firebase, not part of app source
+landing/
