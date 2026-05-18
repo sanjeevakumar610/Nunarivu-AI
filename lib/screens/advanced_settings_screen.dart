@@ -193,10 +193,19 @@ class _AdvancedSettingsScreenState
         setState(() => _modelProgress = progress);
       }
       if (!mounted) return;
-      setState(() { _modelProgress = 1.0; _modelStatus = 'முடிந்தது ✓'; });
-      await ref.read(modelServiceProvider.notifier).tryAutoLoad();
+
+      // Show 100% completion clearly before loading
+      setState(() { _modelProgress = 1.0; _modelStatus = 'முடிந்தது ✓ / Done!'; });
+
+      // Load directly from the just-copied file — do NOT use tryAutoLoad() which
+      // might load from a stale pen-drive path saved in SharedPreferences.
+      await ref.read(modelServiceProvider.notifier).loadModel(dst);
       await _refresh();
       _snack('AI மாதிரி நகலெடுக்கப்பட்டது ✓ / AI model copied and loaded');
+
+      // Keep 100% visible for 3 seconds so the user can see it completed
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) setState(() { _modelProgress = null; _modelStatus = ''; });
     } catch (e) {
       if (!mounted) return;
       setState(() { _modelProgress = null; _modelStatus = ''; });
@@ -308,13 +317,24 @@ class _AdvancedSettingsScreenState
                 : 'Not installed — browse and pull from pen drive below',
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               _StateChip(modelState),
-              if (!_hasAiModel) ...[
-                const SizedBox(width: 6),
-                _SmallButton(
-                  label: 'Retry',
-                  onPressed: () => ref.read(modelServiceProvider.notifier).tryAutoLoad(),
-                ),
-              ],
+              const SizedBox(width: 6),
+              // Reload directly from internal storage — fixes "no response" after Pull
+              _SmallButton(
+                label: 'Reload',
+                onPressed: _busy ? null : () async {
+                  final path = '${await _internalModelsDir()}/$_modelFileName';
+                  if (!File(path).existsSync()) {
+                    _snack('No model in internal storage — Pull first');
+                    return;
+                  }
+                  try {
+                    await ref.read(modelServiceProvider.notifier).loadModel(path);
+                    _snack('மாதிரி ஏற்றப்பட்டது ✓ / Model loaded ✓');
+                  } catch (e) {
+                    _snack('பிழை / Error: $e');
+                  }
+                },
+              ),
             ]),
           ),
           _StatusTile(
@@ -379,7 +399,7 @@ class _AdvancedSettingsScreenState
                 style: GoogleFonts.notoSansTamil(fontSize: 12, color: cs.primary)),
             const SizedBox(height: 6),
             LinearProgressIndicator(
-              value: _modelProgress! < 1.0 ? _modelProgress : null,
+              value: _modelProgress,          // always deterministic: 0.0–1.0
               minHeight: 10,
               borderRadius: BorderRadius.circular(5),
             ),
@@ -574,7 +594,7 @@ class _StateChip extends StatelessWidget {
 
 class _SmallButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   const _SmallButton({required this.label, required this.onPressed});
   @override
   Widget build(BuildContext context) => OutlinedButton(
