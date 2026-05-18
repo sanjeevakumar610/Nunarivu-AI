@@ -226,8 +226,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 8),
             Center(
               child: TextButton.icon(
-                onPressed: () {
-                  ref.read(currentProfileProvider.notifier).clear();
+                onPressed: () async {
+                  await ref.read(currentProfileProvider.notifier).clear();
+                  if (!context.mounted) return;
                   Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
                         builder: (_) => const ProfilePickerScreen()),

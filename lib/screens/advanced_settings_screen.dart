@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,16 +7,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/model_service.dart';
 
-// ── SharedPreferences key ─────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const _kCustomModelPath = 'custom_model_path';
-const _modelFileName    = 'gemma-4-E2B-it-litert-lm.litertlm';
+const _modelFileName = 'gemma-4-E2B-it-litert-lm.litertlm';
 
-// ── Internal path helpers ─────────────────────────────────────────────────────
+// ── Internal destination paths ────────────────────────────────────────────────
 
 Future<String> _internalModelsDir() async {
   final ext = await getExternalStorageDirectory();
@@ -26,56 +23,43 @@ Future<String> _internalModelsDir() async {
 }
 
 Future<String> _internalBooksDir() async {
-  final modelsDir = await _internalModelsDir();
-  return p.join(p.dirname(modelsDir), 'books');
-}
-
-// ── USB drive detection ───────────────────────────────────────────────────────
-
-Future<List<Directory>> _findUsbDrives() async {
-  final found = <Directory>[];
-  try {
-    await for (final entity in Directory('/storage').list()) {
-      if (entity is Directory) {
-        final name = p.basename(entity.path);
-        if (RegExp(r'^[A-F0-9]{4}-[A-F0-9]{4}$', caseSensitive: false)
-            .hasMatch(name)) {
-          found.add(entity);
-        }
-      }
-    }
-  } catch (_) {}
-  return found;
+  final base = p.dirname(await _internalModelsDir());
+  return '$base/books';
 }
 
 // ── File copy helpers ─────────────────────────────────────────────────────────
 
+/// Streams copy progress 0.0 → 1.0 for large files (e.g. 2.4 GB model).
 Stream<double> _copyWithProgress(String src, String dst) async* {
   final source = File(src);
   final total  = await source.length();
-  final outFile = File(dst);
-  await outFile.parent.create(recursive: true);
-  final output = outFile.openWrite();
+  final out    = File(dst);
+  await out.parent.create(recursive: true);
+  final sink = out.openWrite();
   int copied = 0;
   await for (final chunk in source.openRead()) {
-    output.add(chunk);
+    sink.add(chunk);
     copied += chunk.length;
     yield total > 0 ? copied / total : 0.0;
   }
-  await output.flush();
-  await output.close();
+  await sink.flush();
+  await sink.close();
 }
 
-Future<void> _copyDir(Directory src, Directory dst) async {
+/// Recursively copies a directory (for the books folder).
+Future<int> _copyDir(Directory src, Directory dst) async {
   await dst.create(recursive: true);
+  int count = 0;
   await for (final entity in src.list(recursive: false)) {
     final target = p.join(dst.path, p.basename(entity.path));
     if (entity is File) {
       await entity.copy(target);
+      count++;
     } else if (entity is Directory) {
-      await _copyDir(entity, Directory(target));
+      count += await _copyDir(entity, Directory(target));
     }
   }
+  return count;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -91,56 +75,32 @@ class AdvancedSettingsScreen extends ConsumerStatefulWidget {
 class _AdvancedSettingsScreenState
     extends ConsumerState<AdvancedSettingsScreen> {
 
-  // ── Device status ────────────────────────────────────────────────────────────
-  bool _hasAiModel    = false;
-  int  _bookCount     = 0;
-  String _loadedModelPath = '';
+  // ── Status ───────────────────────────────────────────────────────────────────
+  bool   _hasAiModel  = false;
+  int    _bookCount   = 0;
+  String _modelPath   = '';
 
-  // ── USB state ────────────────────────────────────────────────────────────────
-  List<Directory> _usbDrives        = [];
-  Directory?      _selectedDrive;
-  bool            _scanningUsb      = false;
-  bool            _usbScanned       = false;   // true after first scan attempt
-  bool            _usbNunarivuFound = false;
-  bool            _usbHasAiModel    = false;
-  bool            _usbHasBooks      = false;
+  // ── AI model copy ─────────────────────────────────────────────────────────────
+  double? _modelProgress;    // null = idle, 0.0–1.0 = copying
+  String  _modelStatus = '';
 
-  // ── Copy progress ────────────────────────────────────────────────────────────
-  double? _aiProgress;
-  double? _booksProgress;
-  String  _copyStatus = '';
+  // ── Books copy ────────────────────────────────────────────────────────────────
+  bool   _copyingBooks  = false;
+  String _booksStatus   = '';
 
-  // ── Manual / custom path ─────────────────────────────────────────────────────
-  final _pathCtrl = TextEditingController();
-  bool   _customScanned      = false;
-  bool   _customHasAiModel   = false;
-  bool   _customHasBooks     = false;
-  double? _customAiProgress;
-  double? _customBooksProgress;
-
-  bool get _copying =>
-      _aiProgress != null || _booksProgress != null ||
-      _customAiProgress != null || _customBooksProgress != null;
+  bool get _busy => _modelProgress != null || _copyingBooks;
 
   @override
   void initState() {
     super.initState();
-    _loadDeviceStatus();
-    _loadCustomPath();
+    _refresh();
   }
 
-  @override
-  void dispose() {
-    _pathCtrl.dispose();
-    super.dispose();
-  }
+  // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // ── Status ───────────────────────────────────────────────────────────────────
-
-  Future<void> _loadDeviceStatus() async {
+  Future<void> _refresh() async {
     final modelsDir = await _internalModelsDir();
     final booksDir  = await _internalBooksDir();
-
     final modelFile = File('$modelsDir/$_modelFileName');
     final hasAi     = modelFile.existsSync();
 
@@ -154,266 +114,20 @@ class _AdvancedSettingsScreenState
       } catch (_) {}
     }
 
-    // Read saved custom path for loaded model display
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_kCustomModelPath) ?? '';
-
     if (mounted) {
       setState(() {
-        _hasAiModel      = hasAi;
-        _bookCount       = bookCount;
-        _loadedModelPath = hasAi ? modelFile.path : saved;
+        _hasAiModel = hasAi;
+        _bookCount  = bookCount;
+        _modelPath  = hasAi ? modelFile.path : '';
       });
     }
   }
 
-  Future<void> _loadCustomPath() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_kCustomModelPath) ?? '';
-    if (mounted) setState(() => _pathCtrl.text = saved);
-  }
-
-  // ── Permission ────────────────────────────────────────────────────────────────
-
-  Future<bool> _ensureStoragePermission() async {
+  Future<bool> _requestPermission() async {
     var status = await Permission.manageExternalStorage.request();
     if (status.isGranted) return true;
     status = await Permission.storage.request();
     return status.isGranted;
-  }
-
-  // ── USB scan ──────────────────────────────────────────────────────────────────
-
-  Future<void> _scanForDrive() async {
-    setState(() {
-      _scanningUsb      = true;
-      _usbScanned       = false;
-      _selectedDrive    = null;
-      _usbNunarivuFound = false;
-      _usbHasAiModel = _usbHasBooks = false;
-    });
-
-    final granted = await _ensureStoragePermission();
-    if (!granted) {
-      _snack('அனுமதி மறுக்கப்பட்டது / Storage permission denied');
-      setState(() { _scanningUsb = false; _usbScanned = true; });
-      return;
-    }
-
-    final drives = await _findUsbDrives();
-    Directory? selected;
-    bool nunarivuFound = false;
-    bool hasAi = false, hasBooks = false;
-
-    if (drives.isNotEmpty) {
-      selected = drives.first;
-      final base = Directory('${selected.path}/nunarivu');
-      nunarivuFound = base.existsSync();
-      if (nunarivuFound) {
-        hasAi    = File('${base.path}/models/$_modelFileName').existsSync();
-        hasBooks = Directory('${base.path}/books').existsSync();
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _usbDrives        = drives;
-        _selectedDrive    = selected;
-        _usbNunarivuFound = nunarivuFound;
-        _usbHasAiModel    = hasAi;
-        _usbHasBooks      = hasBooks;
-        _scanningUsb      = false;
-        _usbScanned       = true;
-      });
-    }
-  }
-
-  // ── USB copy operations ───────────────────────────────────────────────────────
-
-  Future<void> _copyAiModel() async {
-    if (_selectedDrive == null) return;
-    final src = '${_selectedDrive!.path}/nunarivu/models/$_modelFileName';
-    final dst = '${await _internalModelsDir()}/$_modelFileName';
-    setState(() {
-      _aiProgress = 0.0;
-      _copyStatus = 'AI மாதிரி நகலெடுக்கிறது… / Copying AI model…';
-    });
-    try {
-      await for (final progress in _copyWithProgress(src, dst)) {
-        if (!mounted) return;
-        setState(() => _aiProgress = progress);
-      }
-      if (mounted) {
-        setState(() { _aiProgress = 1.0; _hasAiModel = true; });
-        await ref.read(modelServiceProvider.notifier).tryAutoLoad();
-        await _loadDeviceStatus();
-        _snack('AI மாதிரி நகலெடுக்கப்பட்டது ✓');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _aiProgress = null);
-        _snack('பிழை / Copy error: $e');
-      }
-    }
-  }
-
-  Future<void> _copyBooks() async {
-    if (_selectedDrive == null) return;
-    final src = Directory('${_selectedDrive!.path}/nunarivu/books');
-    final dst = Directory(await _internalBooksDir());
-    setState(() {
-      _booksProgress = 0.0;
-      _copyStatus = 'பாடப்புத்தகங்கள் நகலெடுக்கிறது… / Copying textbooks…';
-    });
-    try {
-      await _copyDir(src, dst);
-      if (mounted) {
-        await _loadDeviceStatus();
-        setState(() => _booksProgress = 1.0);
-        _snack('பாடப்புத்தகங்கள் நகலெடுக்கப்பட்டது ✓');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _booksProgress = null);
-        _snack('பிழை / Copy error: $e');
-      }
-    }
-  }
-
-  Future<void> _copyAll() async {
-    if (_usbHasAiModel) await _copyAiModel();
-    if (_usbHasBooks)   await _copyBooks();
-  }
-
-  // ── Manual / custom path ──────────────────────────────────────────────────────
-
-  Future<void> _browsePath() async {
-    final result = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'மாதிரி கோப்புறை தேர்வு / Select folder',
-    );
-    if (result != null && mounted) {
-      setState(() {
-        _pathCtrl.text = result;
-        _customScanned = false;
-      });
-    }
-  }
-
-  /// Scans the manually entered path for AI model file and books folder.
-  Future<void> _scanCustomPath() async {
-    final path = _pathCtrl.text.trim();
-    if (path.isEmpty) {
-      _snack('பாதை உள்ளிடவும் / Enter a path first');
-      return;
-    }
-    // Check for model file directly in path, or in path/models/
-    final hasModel =
-        File('$path/$_modelFileName').existsSync() ||
-        File('$path/models/$_modelFileName').existsSync();
-    // Check for books folder
-    final hasBooks =
-        Directory('$path/books').existsSync() ||
-        Directory(p.join(path, '..', 'books')).existsSync();
-
-    setState(() {
-      _customScanned    = true;
-      _customHasAiModel = hasModel;
-      _customHasBooks   = hasBooks;
-    });
-
-    if (!hasModel && !hasBooks) {
-      _snack('இந்த பாதையில் மாதிரி இல்லை / No model or books found at this path');
-    }
-  }
-
-  /// Load the AI model directly from the custom path (no copy needed if it fits).
-  Future<void> _loadModelFromCustomPath() async {
-    final path = _pathCtrl.text.trim();
-    // Prefer direct file, then models/ subfolder
-    String? modelFile;
-    if (File('$path/$_modelFileName').existsSync()) {
-      modelFile = '$path/$_modelFileName';
-    } else if (File('$path/models/$_modelFileName').existsSync()) {
-      modelFile = '$path/models/$_modelFileName';
-    }
-    if (modelFile == null) {
-      _snack('மாதிரி கோப்பு இல்லை / Model file not found at path');
-      return;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kCustomModelPath, path);
-    try {
-      await ref.read(modelServiceProvider.notifier).loadModel(modelFile);
-      await _loadDeviceStatus();
-      _snack('மாதிரி ஏற்றப்பட்டது ✓ / Model loaded');
-    } catch (e) {
-      _snack('மாதிரி ஏற்றுவதில் பிழை / Load error: $e');
-    }
-  }
-
-  /// Copy AI model from the custom path into internal app storage.
-  Future<void> _copyAiModelFromCustomPath() async {
-    final path = _pathCtrl.text.trim();
-    String? srcFile;
-    if (File('$path/$_modelFileName').existsSync()) {
-      srcFile = '$path/$_modelFileName';
-    } else if (File('$path/models/$_modelFileName').existsSync()) {
-      srcFile = '$path/models/$_modelFileName';
-    }
-    if (srcFile == null) {
-      _snack('மாதிரி கோப்பு இல்லை / Model file not found');
-      return;
-    }
-    final dst = '${await _internalModelsDir()}/$_modelFileName';
-    setState(() { _customAiProgress = 0.0; });
-    try {
-      await for (final progress in _copyWithProgress(srcFile, dst)) {
-        if (!mounted) return;
-        setState(() => _customAiProgress = progress);
-      }
-      if (mounted) {
-        setState(() { _customAiProgress = 1.0; _hasAiModel = true; });
-        await ref.read(modelServiceProvider.notifier).tryAutoLoad();
-        await _loadDeviceStatus();
-        _snack('AI மாதிரி நகலெடுக்கப்பட்டது ✓');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _customAiProgress = null);
-        _snack('பிழை / Copy error: $e');
-      }
-    }
-  }
-
-  /// Copy books folder from the custom path into internal app storage.
-  Future<void> _copyBooksFromCustomPath() async {
-    final path = _pathCtrl.text.trim();
-    Directory? srcDir;
-    if (Directory('$path/books').existsSync()) {
-      srcDir = Directory('$path/books');
-    } else {
-      final parent = Directory(p.join(path, '..', 'books'));
-      if (parent.existsSync()) srcDir = parent;
-    }
-    if (srcDir == null) {
-      _snack('books கோப்புறை இல்லை / books/ folder not found');
-      return;
-    }
-    final dst = Directory(await _internalBooksDir());
-    setState(() { _customBooksProgress = 0.0; });
-    try {
-      await _copyDir(srcDir, dst);
-      if (mounted) {
-        await _loadDeviceStatus();
-        setState(() => _customBooksProgress = 1.0);
-        _snack('பாடப்புத்தகங்கள் நகலெடுக்கப்பட்டது ✓');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _customBooksProgress = null);
-        _snack('பிழை / Copy error: $e');
-      }
-    }
   }
 
   void _snack(String msg) {
@@ -423,11 +137,117 @@ class _AdvancedSettingsScreenState
     );
   }
 
+  // ── AI Model — browse & copy ──────────────────────────────────────────────────
+
+  Future<void> _browseModel() async {
+    // 1. Pick the model file from wherever the student has it (pen drive, SD card, etc.)
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'மாதிரி கோப்பை தேர்வு செய் / Select model file',
+      type: FileType.any,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final srcPath = result.files.single.path;
+    if (srcPath == null) { _snack('கோப்பு பாதை கிடைக்கவில்லை / File path not found'); return; }
+
+    // 2. Warn if it doesn't look like the right file
+    final fname = p.basename(srcPath);
+    if (!fname.endsWith('.litertlm')) {
+      final ok = await _confirm(
+        title: 'தவறான கோப்பு? / Wrong file?',
+        body: '"$fname"\n\nThe AI model file should be:\n$_modelFileName\n\nCopy anyway?',
+      );
+      if (ok != true) return;
+    }
+
+    await _requestPermission();
+
+    // 3. Copy to internal app storage with progress bar
+    final dst = '${await _internalModelsDir()}/$_modelFileName';
+    setState(() {
+      _modelProgress = 0.0;
+      _modelStatus   = 'நகலெடுக்கிறது… / Copying…';
+    });
+
+    try {
+      await for (final progress in _copyWithProgress(srcPath, dst)) {
+        if (!mounted) return;
+        setState(() => _modelProgress = progress);
+      }
+      if (!mounted) return;
+      setState(() {
+        _modelProgress = 1.0;
+        _modelStatus   = 'நகலெடுக்கப்பட்டது ✓ / Copy complete';
+      });
+      await ref.read(modelServiceProvider.notifier).tryAutoLoad();
+      await _refresh();
+      _snack('AI மாதிரி தயார்! / AI model ready ✓');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _modelProgress = null; _modelStatus = ''; });
+      _snack('பிழை / Error: $e');
+    }
+  }
+
+  // ── Books — browse & copy ─────────────────────────────────────────────────────
+
+  Future<void> _browseBooks() async {
+    // 1. Student picks the folder that contains Grade 10/, Grade 11/ sub-folders
+    final dirPath = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'புத்தகக் கோப்புறை தேர்வு செய் / Select books folder',
+    );
+    if (dirPath == null) return;
+
+    final src = Directory(dirPath);
+    if (!src.existsSync()) { _snack('கோப்புறை இல்லை / Folder not found'); return; }
+
+    await _requestPermission();
+
+    // 2. Copy everything into internal books directory
+    final dst = Directory(await _internalBooksDir());
+    setState(() {
+      _copyingBooks = true;
+      _booksStatus  = 'புத்தகங்கள் நகலெடுக்கிறது… / Copying books…';
+    });
+
+    try {
+      final count = await _copyDir(src, dst);
+      if (!mounted) return;
+      await _refresh();
+      setState(() { _copyingBooks = false; _booksStatus = '$count கோப்புகள் நகலெடுக்கப்பட்டன ✓'; });
+      _snack('$count book files copied ✓');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _copyingBooks = false; _booksStatus = ''; });
+      _snack('பிழை / Error: $e');
+    }
+  }
+
+  Future<bool?> _confirm({required String title, required String body}) =>
+      showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title, style: GoogleFonts.notoSansTamil()),
+          content: Text(body, style: GoogleFonts.notoSansTamil(fontSize: 13)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('ரத்து · Cancel', style: GoogleFonts.notoSansTamil()),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('தொடர் · Continue', style: GoogleFonts.notoSansTamil()),
+            ),
+          ],
+        ),
+      );
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
+    final cs         = Theme.of(context).colorScheme;
     final modelState = ref.watch(modelServiceProvider);
 
     return Scaffold(
@@ -440,15 +260,14 @@ class _AdvancedSettingsScreenState
                     fontSize: 17, fontWeight: FontWeight.bold)),
             Text('Advanced Settings',
                 style: GoogleFonts.notoSansTamil(
-                    fontSize: 11,
-                    color: cs.onPrimary.withOpacity(0.7))),
+                    fontSize: 11, color: cs.onPrimary.withOpacity(0.7))),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh status',
-            onPressed: _loadDeviceStatus,
+            tooltip: 'Refresh',
+            onPressed: _busy ? null : _refresh,
           ),
         ],
       ),
@@ -456,63 +275,129 @@ class _AdvancedSettingsScreenState
         padding: const EdgeInsets.all(16),
         children: [
 
-          // ── Device Status ─────────────────────────────────────────────────
+          // ── Device Status ──────────────────────────────────────────────────
           _SectionLabel('சாதன நிலை · Device Status'),
 
-          // AI model status with loaded path
           _StatusRow(
-            label: 'AI மாதிரி · AI Model (Gemma 4)',
-            sublabel: _hasAiModel
-                ? _loadedModelPath.isNotEmpty
-                    ? _loadedModelPath
-                    : 'Installed ✓'
-                : '❌ Not installed — copy from pen drive or set custom path',
-            ok: _hasAiModel,
+            icon: _hasAiModel ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            iconColor: _hasAiModel ? Colors.green : cs.error,
+            title: 'AI மாதிரி · AI Model (Gemma 4)',
+            subtitle: _hasAiModel
+                ? _modelPath.isNotEmpty ? _modelPath : 'Installed ✓'
+                : 'Not installed — browse and copy from pen drive below',
+            subtitleColor: _hasAiModel ? cs.onSurfaceVariant : cs.error,
           ),
-          // Show model state chip
+
+          // Model engine state chip
           Padding(
-            padding: const EdgeInsets.only(left: 36, bottom: 4),
-            child: Row(
-              children: [
-                _StateChip(modelState),
-                if (!_hasAiModel) ...[
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.refresh_rounded, size: 14),
-                    label: Text('மீண்டும் தேடு / Retry',
-                        style: GoogleFonts.notoSansTamil(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    onPressed: () =>
-                        ref.read(modelServiceProvider.notifier).tryAutoLoad(),
-                  ),
-                ],
+            padding: const EdgeInsets.only(left: 36, bottom: 8),
+            child: Row(children: [
+              _StateChip(modelState),
+              if (!_hasAiModel) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh_rounded, size: 14),
+                  label: Text('மீண்டும் தேடு / Retry',
+                      style: GoogleFonts.notoSansTamil(fontSize: 11)),
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  onPressed: () =>
+                      ref.read(modelServiceProvider.notifier).tryAutoLoad(),
+                ),
               ],
-            ),
+            ]),
           ),
 
           _StatusRow(
-            label: 'பாடப்புத்தகங்கள் · Textbooks',
-            sublabel: _bookCount > 0
+            icon: _bookCount > 0 ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            iconColor: _bookCount > 0 ? Colors.green : cs.error,
+            title: 'பாடப்புத்தகங்கள் · Textbooks',
+            subtitle: _bookCount > 0
                 ? '$_bookCount grade folder(s) installed ✓'
-                : '❌ Not installed — copy from pen drive',
-            ok: _bookCount > 0,
+                : 'Not installed — browse and copy from pen drive below',
+            subtitleColor: _bookCount > 0 ? cs.onSurfaceVariant : cs.error,
           ),
 
           const Divider(height: 28),
 
-          // ── OTG Pen Drive ─────────────────────────────────────────────────
-          _SectionLabel('OTG பேனா டிரைவ் · Pen Drive'),
+          // ── AI Model ───────────────────────────────────────────────────────
+          _SectionLabel('AI மாதிரி · AI Model'),
+
           Text(
-            'பேனா டிரைவில் nunarivu/ கோப்புறையை வைக்கவும்:\n'
-            'Place a nunarivu/ folder on the pen drive with this layout:',
+            'பேனா டிரைவில் உள்ள மாதிரி கோப்பை தேர்வு செய்யவும், '
+            'பயன்பாடு தானாகவே சேமிக்கும்.\n'
+            'Browse to the model file on your pen drive — the app copies it automatically.',
             style: GoogleFonts.notoSansTamil(
-                fontSize: 11, color: cs.onSurfaceVariant, height: 1.6),
+                fontSize: 12, color: cs.onSurfaceVariant, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+
+          // Expected filename hint
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Icon(Icons.info_outline_rounded, size: 16, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'கோப்பு பெயர்: $_modelFileName  (~2.4 GB)',
+                  style: GoogleFonts.notoSansTamil(fontSize: 11),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+
+          if (_modelProgress != null) ...[
+            // Progress bar while copying
+            Text(_modelStatus,
+                style: GoogleFonts.notoSansTamil(
+                    fontSize: 12, color: cs.primary)),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              value: _modelProgress,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _modelProgress! >= 1.0
+                  ? '✓ Done!'
+                  : '${(_modelProgress! * 100).toStringAsFixed(1)}% — '
+                    'இது 5–10 நிமிடம் ஆகலாம் / This may take 5–10 minutes',
+              style: GoogleFonts.notoSansTamil(
+                  fontSize: 11, color: cs.onSurfaceVariant),
+            ),
+          ] else
+            FilledButton.icon(
+              icon: const Icon(Icons.folder_open_rounded),
+              label: Text(
+                'மாதிரி கோப்பை தேர்வு செய் · Browse for Model File',
+                style: GoogleFonts.notoSansTamil(),
+              ),
+              onPressed: _busy ? null : _browseModel,
+            ),
+
+          const Divider(height: 28),
+
+          // ── Books ──────────────────────────────────────────────────────────
+          _SectionLabel('பாடப்புத்தகங்கள் · Textbooks'),
+
+          Text(
+            'Grade 10 மற்றும் Grade 11 கோப்புறைகளை கொண்ட கோப்புறையை தேர்வு செய்யவும்.\n'
+            'Select the folder that contains your Grade 10/ and Grade 11/ sub-folders.',
+            style: GoogleFonts.notoSansTamil(
+                fontSize: 12, color: cs.onSurfaceVariant, height: 1.5),
           ),
           const SizedBox(height: 6),
+
+          // Expected folder structure hint
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -520,251 +405,40 @@ class _AdvancedSettingsScreenState
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Text(
-              'nunarivu/\n'
-              '  models/\n'
-              '    gemma-4-E2B-it-litert-lm.litertlm  ← 2.4 GB\n'
-              '  books/\n'
-              '    Grade 10/\n'
-              '    Grade 11/',
+              'books/          ← தேர்வு செய் / select this\n'
+              '  Grade 10/\n'
+              '    Science/\n'
+              '    Maths/ …\n'
+              '  Grade 11/\n'
+              '    Science/\n'
+              '    Maths/ …',
               style: TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.6),
             ),
           ),
           const SizedBox(height: 12),
 
-          FilledButton.icon(
-            icon: _scanningUsb
-                ? const SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.usb_rounded),
-            label: Text(
-              _scanningUsb
-                  ? 'தேடுகிறது… / Scanning…'
-                  : 'பேனா டிரைவ் தேடு / Scan for Pen Drive',
-              style: GoogleFonts.notoSansTamil(),
-            ),
-            onPressed: (_scanningUsb || _copying) ? null : _scanForDrive,
-          ),
-
-          // After scan — no drive found
-          if (_usbScanned && _usbDrives.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: _AlertCard(
-                icon: Icons.usb_off_rounded,
-                color: cs.error,
-                title: 'OTG டிரைவ் கண்டுபிடிக்கப்படவில்லை',
-                subtitle: 'No USB drive detected.\n'
-                    '• Make sure the OTG cable is connected\n'
-                    '• Unplug and re-plug, then scan again\n'
-                    '• Check Settings → Apps → Allow manage files permission',
-              ),
-            ),
-
-          // Drive found — show details
-          if (_selectedDrive != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(Icons.usb_rounded, size: 16, color: cs.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        _selectedDrive!.path,
-                        style: GoogleFonts.notoSansTamil(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 8),
-
-                  // nunarivu/ folder not on drive
-                  if (!_usbNunarivuFound)
-                    _AlertCard(
-                      icon: Icons.folder_off_rounded,
-                      color: cs.error,
-                      title: 'nunarivu/ கோப்புறை இல்லை',
-                      subtitle: 'Create a nunarivu/ folder on the drive '
-                          'with the layout shown above.',
-                    )
-                  // nunarivu/ found but nothing inside
-                  else if (!_usbHasAiModel && !_usbHasBooks)
-                    _AlertCard(
-                      icon: Icons.search_off_rounded,
-                      color: Colors.orange,
-                      title: 'மாதிரி கோப்புகள் இல்லை',
-                      subtitle: 'nunarivu/ folder found but no model or books '
-                          'inside. Check the folder structure.',
-                    )
-                  else
-                    Wrap(spacing: 8, runSpacing: 4, children: [
-                      if (_usbHasAiModel) _FoundChip('AI Model ✓'),
-                      if (_usbHasBooks)   _FoundChip('Books ✓'),
-                      if (!_usbHasAiModel) _MissingChip('AI Model ✗'),
-                    ]),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            if (_copying)
+          if (_copyingBooks) ...[
+            Text(_booksStatus,
+                style: GoogleFonts.notoSansTamil(
+                    fontSize: 12, color: cs.primary)),
+            const SizedBox(height: 6),
+            const LinearProgressIndicator(),
+          ] else ...[
+            if (_booksStatus.isNotEmpty && !_copyingBooks)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_copyStatus,
+                child: Text(_booksStatus,
                     style: GoogleFonts.notoSansTamil(
-                        fontSize: 12, color: cs.primary)),
+                        fontSize: 12, color: Colors.green)),
               ),
-
-            if (_usbHasAiModel) ...[
-              _aiProgress != null
-                  ? _ProgressRow('AI மாதிரி (2.4 GB)', _aiProgress!)
-                  : _CopyTile(
-                      icon: Icons.memory_rounded,
-                      label: 'AI மாதிரி நகலெடு / Copy AI Model',
-                      sublabel: '~2.4 GB — takes 5–10 minutes',
-                      onPressed: _copying ? null : _copyAiModel,
-                    ),
-              const SizedBox(height: 8),
-            ],
-
-            if (_usbHasBooks) ...[
-              _booksProgress != null
-                  ? _ProgressRow('பாடப்புத்தகங்கள்', _booksProgress!)
-                  : _CopyTile(
-                      icon: Icons.menu_book_rounded,
-                      label: 'பாடப்புத்தகங்கள் நகலெடு / Copy Textbooks',
-                      sublabel: 'PDF books',
-                      onPressed: _copying ? null : _copyBooks,
-                    ),
-              const SizedBox(height: 8),
-            ],
-
-            if ((_usbHasAiModel || _usbHasBooks) && !_copying)
-              OutlinedButton.icon(
-                icon: const Icon(Icons.copy_all_rounded),
-                label: Text('அனைத்தையும் நகலெடு / Copy All',
-                    style: GoogleFonts.notoSansTamil()),
-                onPressed: _copyAll,
+            FilledButton.icon(
+              icon: const Icon(Icons.folder_open_rounded),
+              label: Text(
+                'புத்தகக் கோப்புறை தேர்வு செய் · Browse for Books Folder',
+                style: GoogleFonts.notoSansTamil(),
               ),
-          ],
-
-          const Divider(height: 28),
-
-          // ── Manual Path ───────────────────────────────────────────────────
-          _SectionLabel('கைமுறை பாதை · Manual Path'),
-          Text(
-            'தனிப்பட்ட சேமிப்பு இடத்தில் மாதிரி இருந்தால் கீழே பாதையை உள்ளிடவும்.\n'
-            'If the model is stored in a custom location, enter the folder path below.',
-            style: GoogleFonts.notoSansTamil(
-                fontSize: 12, color: cs.onSurfaceVariant, height: 1.5),
-          ),
-          const SizedBox(height: 10),
-
-          // Path field + browse
-          Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _pathCtrl,
-                style: GoogleFonts.notoSansTamil(fontSize: 13),
-                decoration: InputDecoration(
-                  labelText: 'கோப்புறை பாதை · Folder path',
-                  labelStyle: GoogleFonts.notoSansTamil(fontSize: 12),
-                  hintText: '/storage/emulated/0/nunarivu/models',
-                  hintStyle: GoogleFonts.notoSansTamil(
-                      fontSize: 11, color: cs.onSurfaceVariant),
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() => _customScanned = false),
-              ),
+              onPressed: _busy ? null : _browseBooks,
             ),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: _browsePath,
-              child: Text('தேடு\nBrowse',
-                  style: GoogleFonts.notoSansTamil(fontSize: 11),
-                  textAlign: TextAlign.center),
-            ),
-          ]),
-          const SizedBox(height: 8),
-
-          // Scan + action buttons
-          Row(children: [
-            Expanded(
-              child: FilledButton.icon(
-                icon: const Icon(Icons.search_rounded),
-                label: Text('இங்கே தேடு / Scan this path',
-                    style: GoogleFonts.notoSansTamil(fontSize: 12)),
-                onPressed: _copying ? null : _scanCustomPath,
-              ),
-            ),
-          ]),
-
-          // Scan results
-          if (_customScanned) ...[
-            const SizedBox(height: 10),
-            if (!_customHasAiModel && !_customHasBooks)
-              _AlertCard(
-                icon: Icons.search_off_rounded,
-                color: cs.error,
-                title: 'மாதிரி கோப்பு இல்லை / Model not found',
-                subtitle: 'No $_modelFileName or books/ folder found at this path.\n'
-                    'Check the path and try again.',
-              )
-            else ...[
-              Wrap(spacing: 8, runSpacing: 4, children: [
-                if (_customHasAiModel)  _FoundChip('AI Model found ✓'),
-                if (_customHasBooks)    _FoundChip('Books found ✓'),
-                if (!_customHasAiModel) _MissingChip('AI Model not found'),
-              ]),
-              const SizedBox(height: 12),
-
-              // AI model actions
-              if (_customHasAiModel) ...[
-                if (_customAiProgress != null)
-                  _ProgressRow('AI மாதிரி நகலெடுக்கிறது', _customAiProgress!)
-                else
-                  Column(children: [
-                    _CopyTile(
-                      icon: Icons.play_circle_outline_rounded,
-                      label: 'இந்த இடத்திலிருந்து ஏற்று / Load from this path',
-                      sublabel: 'No copy — loads directly (fast)',
-                      onPressed: _copying ? null : _loadModelFromCustomPath,
-                    ),
-                    const SizedBox(height: 6),
-                    _CopyTile(
-                      icon: Icons.drive_file_move_rounded,
-                      label: 'உள்ளே நகலெடு / Copy to app storage',
-                      sublabel: '~2.4 GB — needed if model is on removable storage',
-                      onPressed: _copying ? null : _copyAiModelFromCustomPath,
-                    ),
-                  ]),
-                const SizedBox(height: 8),
-              ],
-
-              // Books actions
-              if (_customHasBooks) ...[
-                if (_customBooksProgress != null)
-                  _ProgressRow('பாடப்புத்தகங்கள் நகலெடுக்கிறது',
-                      _customBooksProgress!)
-                else
-                  _CopyTile(
-                    icon: Icons.menu_book_rounded,
-                    label: 'பாடப்புத்தகங்கள் நகலெடு / Copy Books',
-                    sublabel: 'Copies books/ folder to app storage',
-                    onPressed: _copying ? null : _copyBooksFromCustomPath,
-                  ),
-              ],
-            ],
           ],
 
           const SizedBox(height: 32),
@@ -795,32 +469,30 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _StatusRow extends StatelessWidget {
-  final String label;
-  final String sublabel;
-  final bool ok;
-  const _StatusRow(
-      {required this.label, required this.sublabel, required this.ok});
+  final IconData icon;
+  final Color    iconColor;
+  final String   title;
+  final String   subtitle;
+  final Color    subtitleColor;
+  const _StatusRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.subtitleColor,
+  });
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        ok ? Icons.check_circle_rounded : Icons.cancel_rounded,
-        color: ok ? Colors.green : cs.error,
-        size: 22,
-      ),
-      title: Text(label,
-          style: GoogleFonts.notoSansTamil(
-              fontSize: 13, fontWeight: FontWeight.w600)),
-      subtitle: Text(sublabel,
-          style: GoogleFonts.notoSansTamil(
-              fontSize: 11,
-              color: ok ? cs.onSurfaceVariant : cs.error,
-              height: 1.4)),
-    );
-  }
+  Widget build(BuildContext context) => ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, color: iconColor, size: 22),
+        title: Text(title,
+            style: GoogleFonts.notoSansTamil(
+                fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle,
+            style: GoogleFonts.notoSansTamil(
+                fontSize: 11, color: subtitleColor, height: 1.4)),
+      );
 }
 
 class _StateChip extends StatelessWidget {
@@ -829,10 +501,10 @@ class _StateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (state) {
-      ModelState.ready    => ('தயார் · Ready',        Colors.green),
-      ModelState.loading  => ('ஏற்றுகிறது…',          Colors.orange),
+      ModelState.ready    => ('தயார் · Ready',            Colors.green),
+      ModelState.loading  => ('ஏற்றுகிறது… · Loading',   Colors.orange),
       ModelState.notFound => ('கோப்பு இல்லை · Not found', Colors.red),
-      ModelState.error    => ('பிழை · Error',          Colors.red),
+      ModelState.error    => ('பிழை · Error',              Colors.red),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -843,147 +515,7 @@ class _StateChip extends StatelessWidget {
       ),
       child: Text(label,
           style: GoogleFonts.notoSansTamil(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: color)),
-    );
-  }
-}
-
-class _AlertCard extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  const _AlertCard(
-      {required this.icon,
-      required this.color,
-      required this.title,
-      required this.subtitle});
-  @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.4)),
-        ),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: GoogleFonts.notoSansTamil(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: color)),
-                const SizedBox(height: 3),
-                Text(subtitle,
-                    style: GoogleFonts.notoSansTamil(
-                        fontSize: 11, height: 1.5)),
-              ],
-            ),
-          ),
-        ]),
-      );
-}
-
-class _FoundChip extends StatelessWidget {
-  final String label;
-  const _FoundChip(this.label);
-  @override
-  Widget build(BuildContext context) => Chip(
-        label: Text(label, style: GoogleFonts.notoSansTamil(fontSize: 11)),
-        backgroundColor: Colors.green.withOpacity(0.12),
-        side: BorderSide(color: Colors.green.withOpacity(0.5)),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      );
-}
-
-class _MissingChip extends StatelessWidget {
-  final String label;
-  const _MissingChip(this.label);
-  @override
-  Widget build(BuildContext context) => Chip(
-        label: Text(label, style: GoogleFonts.notoSansTamil(fontSize: 11)),
-        backgroundColor: Colors.red.withOpacity(0.08),
-        side: BorderSide(color: Colors.red.withOpacity(0.4)),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      );
-}
-
-class _ProgressRow extends StatelessWidget {
-  final String label;
-  final double value;
-  const _ProgressRow(this.label, this.value);
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Expanded(
-                child: Text(label,
-                    style: GoogleFonts.notoSansTamil(fontSize: 12))),
-            Text(
-              value >= 1.0
-                  ? '✓ Done'
-                  : '${(value * 100).toStringAsFixed(0)}%',
-              style: GoogleFonts.notoSansTamil(
-                  fontSize: 11,
-                  color: value >= 1.0 ? Colors.green : null),
-            ),
-          ]),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: value,
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ],
-      );
-}
-
-class _CopyTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String sublabel;
-  final VoidCallback? onPressed;
-  const _CopyTile(
-      {required this.icon,
-      required this.label,
-      required this.sublabel,
-      this.onPressed});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-      child: Row(children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: GoogleFonts.notoSansTamil(fontSize: 12)),
-                Text(sublabel,
-                    style: GoogleFonts.notoSansTamil(
-                        fontSize: 10, color: cs.onSurfaceVariant)),
-              ]),
-        ),
-      ]),
+              fontSize: 10, fontWeight: FontWeight.bold, color: color)),
     );
   }
 }
